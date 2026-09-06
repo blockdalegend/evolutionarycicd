@@ -8,6 +8,7 @@ inject arbitrary commands.
 
 from __future__ import annotations
 
+import re
 import subprocess  # nosec B404 - used only for fixed pytest invocations
 import sys
 from dataclasses import dataclass, field
@@ -59,8 +60,6 @@ def run_pytest(
 
 def _parse_summary(stdout: str) -> tuple[int, int]:
     """Best-effort parse of pytest's summary line, e.g. '3 passed, 1 failed'."""
-    import re
-
     passed = failed = 0
     passed_match = re.search(r"(\d+) passed", stdout)
     failed_match = re.search(r"(\d+) failed", stdout)

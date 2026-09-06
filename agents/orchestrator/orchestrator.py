@@ -83,27 +83,31 @@ class AgentOrchestrator:
         return capability in set(self.approval_rules.get("requires_human_approval", []))
 
     def run_agent(self, agent: BaseAgent, context: AgentContext) -> AgentResult:
-        """Run ``agent`` end-to-end, enforcing policy before any decision executes.
+        """Run ``agent`` end-to-end, enforcing policy *before* any tool executes.
 
-        The agent's own ``run`` loop still executes ``act``; this method's
-        primary job is to fail closed (deny) if the agent's declared tool
-        capability is not present in its policy entry, and to surface a
-        friendly PR comment when appropriate.
+        A ``policy_check`` callback is threaded through to ``agent.run``, which
+        invokes it immediately after ``reason`` produces a decision and *before*
+        ``act`` is allowed to run. If the agent's declared tool capability is not
+        present in its policy entry, ``PolicyViolation`` is raised at that point,
+        so the disallowed side effect never executes.
         """
-        result = agent.run(context)
-        decision = result.artifacts.get("decision", {})
-        tool = decision.get("tool")
-        if tool and not self.check_capability(agent.name, tool):
-            logger.warning(
-                "policy denied tool for agent",
-                extra={"extra_fields": {"agent": agent.name, "tool": tool}},
-            )
-            raise PolicyViolation(f"{agent.name} is not permitted to use tool '{tool}'")
+
+        def policy_check(decision: Any) -> None:
+            tool = decision.tool
+            if tool and not self.check_capability(agent.name, tool):
+                logger.warning(
+                    "policy denied tool for agent",
+                    extra={"extra_fields": {"agent": agent.name, "tool": tool}},
+                )
+                raise PolicyViolation(f"{agent.name} is not permitted to use tool '{tool}'")
+
+        result = agent.run(context, policy_check=policy_check)
 
         if context.pull_request_number is not None:
             comment = self._format_pr_comment(agent.name, result)
             self.github_client.post_pr_comment(context.pull_request_number, comment)
         return result
+
 
     @staticmethod
     def _format_pr_comment(agent_name: str, result: AgentResult) -> str:

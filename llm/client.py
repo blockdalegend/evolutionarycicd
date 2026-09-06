@@ -55,6 +55,11 @@ class LLMClient:
         """Return whether an API key is available for real calls."""
         return bool(self.api_key)
 
+    def _auth_header_value(self) -> str:
+        """Build the HTTP Authorization header value for the configured API key."""
+        scheme = "Bearer"
+        return f"{scheme} {self.api_key}"
+
     def complete(self, request: LLMRequest) -> LLMResponse:
         """Send ``request`` to the configured LLM and return a structured response.
 
@@ -78,9 +83,8 @@ class LLMClient:
                 "json_schema": {"name": "agent_output", "schema": request.response_schema},
             }
 
-        auth_scheme = "Bear" + "er"
         headers = {
-            "Authorization": f"{auth_scheme} {self.api_key}",
+            "Authorization": self._auth_header_value(),
             "Content-Type": "application/json",
         }
         url = f"{self.base_url}/chat/completions"

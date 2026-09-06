@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -116,8 +117,20 @@ class BaseAgent(ABC):
             extra={"extra_fields": {"agent": self.name, "success": success}},
         )
 
-    def run(self, context: AgentContext) -> AgentResult:
-        """Run the full observe -> reason -> act -> validate -> record lifecycle."""
+    def run(
+        self,
+        context: AgentContext,
+        policy_check: Callable[[AgentDecision], None] | None = None,
+    ) -> AgentResult:
+        """Run the full observe -> reason -> act -> validate -> record lifecycle.
+
+        ``policy_check``, when provided, is invoked with the agent's
+        ``AgentDecision`` *after* ``reason`` and *before* ``act``. This is the
+        hook the orchestrator uses to enforce ``policies/agent_permissions.yml``:
+        if the decision requests a tool the agent is not permitted to use,
+        ``policy_check`` should raise (e.g. ``PolicyViolation``), which
+        prevents ``act`` from ever executing the corresponding side effect.
+        """
         start = time.monotonic()
         success = True
         observation: dict[str, Any] = {}
@@ -127,6 +140,8 @@ class BaseAgent(ABC):
         try:
             observation = self.observe(context)
             decision = self.reason(context, observation)
+            if policy_check is not None:
+                policy_check(decision)
             tool_result = self.act(context, decision)
             validation = self.validate(context, decision, tool_result)
         except Exception as exc:  # noqa: BLE001 - agents must never crash the pipeline
@@ -142,3 +157,4 @@ class BaseAgent(ABC):
             artifacts={"decision": decision.model_dump() if decision else {}},
             validation_results=validation,
         )
+
