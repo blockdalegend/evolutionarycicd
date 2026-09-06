@@ -1,0 +1,52 @@
+name: Agent - Merge Conflict Resolution
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: "Pull request number to analyze for merge conflicts"
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  merge-conflict-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch PR branch and attempt merge (to surface conflicts)
+        run: |
+          git fetch origin "pull/${{ inputs.pull_request_number }}/head:pr-branch"
+          git checkout main
+          git merge --no-commit --no-ff pr-branch || true
+
+      - name: Run Merge Conflict Agent
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          AGENT_DRY_RUN: ${{ vars.AGENT_DRY_RUN || 'true' }}
+          AGENT_LOG_LEVEL: INFO
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+        run: python scripts/run_agent.py --agent merge_conflict
+
+      - name: Abort in-progress merge (never auto-commit)
+        if: always()
+        run: git merge --abort || true

@@ -1,0 +1,37 @@
+# --- Byte-compiled / cache ---
+__pycache__/
+*.py[cod]
+*$py.class
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Coverage / test artifacts ---
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+junit.xml
+
+# --- Environment / secrets ---
+.env
+*.local.env
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+
+# --- Build artifacts ---
+build/
+dist/
+*.egg-info/
+
+# --- Demo telemetry (generated at runtime, not seed data) ---
+data/*.ndjson
+!data/.gitkeep

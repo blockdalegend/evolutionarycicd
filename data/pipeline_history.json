@@ -1,0 +1,386 @@
+[
+  {
+    "run_id": "run-1000",
+    "workflow": "agent-test-quality.yml",
+    "status": "failure",
+    "duration_seconds": 42.78853596915768,
+    "failed_stage": "dependency_install",
+    "failure_reason": "dependency:requests_registry_timeout",
+    "retry_count": 2,
+    "agent_actions": [
+      "supply_chain_agent:reported"
+    ],
+    "timestamp": "2024-01-01T00:00:00Z"
+  },
+  {
+    "run_id": "run-1001",
+    "workflow": "ci.yml",
+    "status": "success",
+    "duration_seconds": 122.00086041781336,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-01T06:00:00Z"
+  },
+  {
+    "run_id": "run-1002",
+    "workflow": "ci.yml",
+    "status": "success",
+    "duration_seconds": 142.00234546952953,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-01T12:00:00Z"
+  },
+  {
+    "run_id": "run-1003",
+    "workflow": "ci.yml",
+    "status": "success",
+    "duration_seconds": 137.85685905190581,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-01T18:00:00Z"
+  },
+  {
+    "run_id": "run-1004",
+    "workflow": "agent-test-quality.yml",
+    "status": "success",
+    "duration_seconds": 178.917697133121,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-02T00:00:00Z"
+  },
+  {
+    "run_id": "run-1005",
+    "workflow": "ci.yml",
+    "status": "failure",
+    "duration_seconds": 207.06797949691645,
+    "failed_stage": "pytest",
+    "failure_reason": "flaky:test_payment_gateway_timeout",
+    "retry_count": 1,
+    "agent_actions": [
+      "failure_analysis_agent:reported"
+    ],
+    "timestamp": "2024-01-02T06:00:00Z"
+  },
+  {
+    "run_id": "run-1006",
+    "workflow": "ci.yml",
+    "status": "success",
+    "duration_seconds": 633.8269351557268,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-02T12:00:00Z"
+  },
+  {
+    "run_id": "run-1007",
+    "workflow": "ci.yml",
+    "status": "failure",
+    "duration_seconds": 62.608164978882485,
+    "failed_stage": "ruff",
+    "failure_reason": "lint_error",
+    "retry_count": 0,
+    "agent_actions": [],
+    "timestamp": "2024-01-02T18:00:00Z"
+  },
+  {
+    "run_id": "run-1008",
+    "workflow": "agent-test-quality.yml",
+    "status": "success",
+    "duration_seconds": 153.75374557482164,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-03T00:00:00Z"
+  },
+  {
+    "run_id": "run-1009",
+    "workflow": "ci.yml",
+    "status": "failure",
+    "duration_seconds": 30.595944388761406,
+    "failed_stage": "dependency_install",
+    "failure_reason": "dependency:requests_registry_timeout",
+    "retry_count": 2,
+    "agent_actions": [
+      "supply_chain_agent:reported"
+    ],
+    "timestamp": "2024-01-03T06:00:00Z"
+  },
+  {
+    "run_id": "run-1010",
+    "workflow": "ci.yml",
+    "status": "failure",
+    "duration_seconds": 188.74551899214413,
+    "failed_stage": "pytest",
+    "failure_reason": "flaky:test_payment_gateway_timeout",
+    "retry_count": 1,
+    "agent_actions": [
+      "failure_analysis_agent:reported"
+    ],
+    "timestamp": "2024-01-03T12:00:00Z"
+  },
+  {
+    "run_id": "run-1011",
+    "workflow": "ci.yml",
+    "status": "success",
+    "duration_seconds": 160.428423048269,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-03T18:00:00Z"
+  },
+  {
+    "run_id": "run-1012",
+    "workflow": "agent-test-quality.yml",
+    "status": "success",
+    "duration_seconds": 503.98039545257956,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-04T00:00:00Z"
+  },
+  {
+    "run_id": "run-1013",
+    "workflow": "ci.yml",
+    "status": "success",
+    "duration_seconds": 135.90701205493187,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-04T06:00:00Z"
+  },
+  {
+    "run_id": "run-1014",
+    "workflow": "ci.yml",
+    "status": "failure",
+    "duration_seconds": 79.4965331333857,
+    "failed_stage": "ruff",
+    "failure_reason": "lint_error",
+    "retry_count": 0,
+    "agent_actions": [],
+    "timestamp": "2024-01-04T12:00:00Z"
+  },
+  {
+    "run_id": "run-1015",
+    "workflow": "ci.yml",
+    "status": "failure",
+    "duration_seconds": 201.79765922412867,
+    "failed_stage": "pytest",
+    "failure_reason": "flaky:test_payment_gateway_timeout",
+    "retry_count": 1,
+    "agent_actions": [
+      "failure_analysis_agent:reported"
+    ],
+    "timestamp": "2024-01-04T18:00:00Z"
+  },
+  {
+    "run_id": "run-1016",
+    "workflow": "agent-test-quality.yml",
+    "status": "success",
+    "duration_seconds": 137.63524976325573,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-05T00:00:00Z"
+  },
+  {
+    "run_id": "run-1017",
+    "workflow": "ci.yml",
+    "status": "success",
+    "duration_seconds": 167.1412547100727,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-05T06:00:00Z"
+  },
+  {
+    "run_id": "run-1018",
+    "workflow": "ci.yml",
+    "status": "failure",
+    "duration_seconds": 46.18860913355653,
+    "failed_stage": "dependency_install",
+    "failure_reason": "dependency:requests_registry_timeout",
+    "retry_count": 2,
+    "agent_actions": [
+      "supply_chain_agent:reported"
+    ],
+    "timestamp": "2024-01-05T12:00:00Z"
+  },
+  {
+    "run_id": "run-1019",
+    "workflow": "ci.yml",
+    "status": "success",
+    "duration_seconds": 120.51990077424489,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-05T18:00:00Z"
+  },
+  {
+    "run_id": "run-1020",
+    "workflow": "agent-test-quality.yml",
+    "status": "success",
+    "duration_seconds": 184.46554014662462,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-06T00:00:00Z"
+  },
+  {
+    "run_id": "run-1021",
+    "workflow": "ci.yml",
+    "status": "failure",
+    "duration_seconds": 80.94418184964681,
+    "failed_stage": "ruff",
+    "failure_reason": "lint_error",
+    "retry_count": 0,
+    "agent_actions": [],
+    "timestamp": "2024-01-06T06:00:00Z"
+  },
+  {
+    "run_id": "run-1022",
+    "workflow": "ci.yml",
+    "status": "success",
+    "duration_seconds": 147.22004132143934,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-06T12:00:00Z"
+  },
+  {
+    "run_id": "run-1023",
+    "workflow": "ci.yml",
+    "status": "success",
+    "duration_seconds": 132.43835998494254,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-06T18:00:00Z"
+  },
+  {
+    "run_id": "run-1024",
+    "workflow": "agent-test-quality.yml",
+    "status": "success",
+    "duration_seconds": 643.5819608310171,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-07T00:00:00Z"
+  },
+  {
+    "run_id": "run-1025",
+    "workflow": "ci.yml",
+    "status": "failure",
+    "duration_seconds": 193.46378180450506,
+    "failed_stage": "pytest",
+    "failure_reason": "flaky:test_payment_gateway_timeout",
+    "retry_count": 1,
+    "agent_actions": [
+      "failure_analysis_agent:reported"
+    ],
+    "timestamp": "2024-01-07T06:00:00Z"
+  },
+  {
+    "run_id": "run-1026",
+    "workflow": "ci.yml",
+    "status": "success",
+    "duration_seconds": 127.41966747041184,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-07T12:00:00Z"
+  },
+  {
+    "run_id": "run-1027",
+    "workflow": "ci.yml",
+    "status": "failure",
+    "duration_seconds": 31.93432753666928,
+    "failed_stage": "dependency_install",
+    "failure_reason": "dependency:requests_registry_timeout",
+    "retry_count": 2,
+    "agent_actions": [
+      "supply_chain_agent:reported"
+    ],
+    "timestamp": "2024-01-07T18:00:00Z"
+  },
+  {
+    "run_id": "run-1028",
+    "workflow": "agent-test-quality.yml",
+    "status": "success",
+    "duration_seconds": 187.79954930779678,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-08T00:00:00Z"
+  },
+  {
+    "run_id": "run-1029",
+    "workflow": "ci.yml",
+    "status": "success",
+    "duration_seconds": 168.29808250935127,
+    "failed_stage": null,
+    "failure_reason": null,
+    "retry_count": 0,
+    "agent_actions": [
+      "test_quality_agent:no_action"
+    ],
+    "timestamp": "2024-01-08T06:00:00Z"
+  }
+]

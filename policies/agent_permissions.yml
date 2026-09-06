@@ -1,0 +1,54 @@
+# Policy: what each agent is CAPABLE of invoking, if authorized.
+#
+# IMPORTANT: Capability != Authority.
+#
+# This file only lists which tools an agent is permitted to *attempt*. Many
+# capabilities additionally require human approval before the orchestrator
+# will actually execute them -- see approval_rules.yml for the authority
+# layer that sits on top of this policy.
+
+test_quality_agent:
+  read_repository: true
+  read_pull_request: true
+  execute_tests: true
+  modify_code: true
+  create_branch: true
+  push_branch: true
+  create_pull_request: true
+  comment_pull_request: true
+  merge_pull_request: false
+  deploy: false
+
+failure_analysis_agent:
+  read_repository: true
+  read_pull_request: true
+  execute_tests: true
+  modify_code: false
+  comment_pull_request: true
+  merge_pull_request: false
+  deploy: false
+
+merge_conflict_agent:
+  read_repository: true
+  execute_tests: true
+  modify_code: true
+  create_branch: true
+  push_branch: false
+  merge_pull_request: false
+  deploy: false
+
+supply_chain_agent:
+  read_repository: true
+  execute_security_scans: true
+  modify_code: false
+  comment_pull_request: true
+  merge_pull_request: false
+  deploy: false
+
+pipeline_optimizer_agent:
+  read_repository: true
+  read_pipeline_history: true
+  propose_workflow_change: true
+  modify_workflow: false
+  merge_pull_request: false
+  deploy: false
