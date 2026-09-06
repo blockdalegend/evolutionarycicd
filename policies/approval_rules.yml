@@ -1,0 +1,32 @@
+# Policy: which capabilities require explicit human approval before the
+# orchestrator will execute them, even if the agent is permitted to attempt
+# the action per agent_permissions.yml.
+#
+# Capability != Authority:
+#   agent_permissions.yml says what an agent *can try to do*.
+#   approval_rules.yml says what a human *must sign off on* before it happens.
+
+requires_human_approval:
+  - modify_code
+  - modify_workflow
+  - push_branch
+  - merge_pull_request
+  - deploy
+
+# Actions that may proceed without a human in the loop, because they are
+# read-only, advisory, or purely informational.
+auto_approved:
+  - read_repository
+  - read_pull_request
+  - read_pipeline_history
+  - execute_tests
+  - execute_security_scans
+  - comment_pull_request
+  - create_branch
+  - propose_workflow_change
+
+# create_pull_request is intentionally listed as auto-approved: opening a PR
+# with proposed changes is safe (nothing merges automatically), but the PR
+# itself cannot be merged without a human, per merge_pull_request above.
+auto_approved_with_review:
+  - create_pull_request
