@@ -82,7 +82,6 @@ def run_pip_audit(requirements_path: Path) -> ScanResult:
     )
 
 
-
 def find_unpinned_requirements(requirements_path: Path) -> list[str]:
     """Return requirement lines that do not pin an exact version (``==``)."""
     if not requirements_path.exists():

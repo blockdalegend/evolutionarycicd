@@ -108,7 +108,6 @@ class AgentOrchestrator:
             self.github_client.post_pr_comment(context.pull_request_number, comment)
         return result
 
-
     @staticmethod
     def _format_pr_comment(agent_name: str, result: AgentResult) -> str:
         """Render a human-friendly PR comment summarizing an agent's outcome."""
