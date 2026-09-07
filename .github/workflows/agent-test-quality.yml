@@ -48,7 +48,7 @@ jobs:
           ollama pull qwen2.5-coder:3b
 
       - name: Generate test and coverage reports
-        run: pytest --cov=app --cov-report=term-missing --cov-report=xml --junitxml=junit.xml
+        run: pytest --cov=app --cov-branch --cov-report=term-missing --cov-report=xml --junitxml=junit.xml
         continue-on-error: true
 
       - name: Collect PR context

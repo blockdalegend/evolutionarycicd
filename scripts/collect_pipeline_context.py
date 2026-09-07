@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agents.orchestrator.orchestrator import load_github_event_context  # noqa: E402
 from telemetry.store import load_pipeline_history  # noqa: E402
+from tools.analysis.ast_extractor import extract_python_evidence  # noqa: E402
 from tools.github.client import GitHubClient  # noqa: E402
 
 
@@ -86,7 +88,7 @@ def _parse_junit(path: Path) -> dict[str, object]:
 
 
 def _parse_coverage(path: Path) -> dict[str, object]:
-    """Extract coverage percentage from coverage.py XML output."""
+    """Extract aggregate and per-file line/branch facts from coverage XML."""
     if not path.exists():
         return {}
     try:
@@ -96,7 +98,68 @@ def _parse_coverage(path: Path) -> dict[str, object]:
     line_rate = root.get("line-rate")
     if line_rate is None:
         return {}
-    return {"after": round(float(line_rate) * 100, 2)}
+    files: list[dict[str, object]] = []
+    has_branches = False
+    for class_node in root.findall(".//class"):
+        filename = class_node.get("filename", "")
+        line_node_list = class_node.findall("./lines/line")
+        missing_lines = [
+            int(line.get("number", 0))
+            for line in line_node_list
+            if line.get("hits") == "0" and line.get("number")
+        ]
+        branches: list[dict[str, int]] = []
+        for line in line_node_list:
+            condition_coverage = line.get("condition-coverage", "")
+            match = re.search(r"\((\d+)\s*/\s*(\d+)\)", condition_coverage)
+            if match is None:
+                continue
+            has_branches = True
+            branches.append(
+                {
+                    "line": int(line.get("number", 0)),
+                    "covered": int(match.group(1)),
+                    "total": int(match.group(2)),
+                }
+            )
+        files.append(
+            {
+                "file": filename,
+                "line_rate": round(float(class_node.get("line-rate", 0)) * 100, 2),
+                "missing_lines": missing_lines,
+                "branches": branches,
+            }
+        )
+    return {
+        "after": round(float(line_rate) * 100, 2),
+        "branch_coverage_available": has_branches,
+        "files": files,
+    }
+
+
+def _collect_static_evidence(
+    root: Path, changed_files: list[str], test_sources: dict[str, str]
+) -> dict[str, object]:
+    """Build AST evidence for changed Python files and collected tests."""
+    paths = set(path for path in changed_files if path.endswith(".py"))
+    paths.update(path for path in test_sources if path.endswith(".py"))
+    files: list[dict[str, object]] = []
+    parse_errors: list[dict[str, str]] = []
+    for relative_path in sorted(paths):
+        if relative_path in test_sources:
+            source = test_sources[relative_path]
+        else:
+            path = root / relative_path
+            try:
+                source = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                parse_errors.append({"file": relative_path, "error": str(exc)})
+                continue
+        try:
+            files.append(extract_python_evidence(relative_path, source))
+        except (SyntaxError, ValueError) as exc:
+            parse_errors.append({"file": relative_path, "error": str(exc)})
+    return {"files": files, "parse_errors": parse_errors}
 
 
 def _collect_local_git_diff() -> tuple[list[str], str]:
@@ -169,6 +232,7 @@ def collect_context() -> dict[str, object]:
     local_changed_files, local_diff = _collect_local_git_diff()
     changed_files = pull_request_info.changed_files if pull_request_info else local_changed_files
     diff = pull_request_info.diff if pull_request_info else local_diff
+    test_sources = _collect_test_sources(Path.cwd())
 
     return {
         "repository": os.environ.get("GITHUB_REPOSITORY", ""),
@@ -183,8 +247,9 @@ def collect_context() -> dict[str, object]:
         "changed_files": changed_files,
         "diff": diff,
         "test_results": junit,
-        "test_sources": _collect_test_sources(Path.cwd()),
+        "test_sources": test_sources,
         "coverage": coverage,
+        "static_evidence": _collect_static_evidence(Path.cwd(), changed_files, test_sources),
         "security_findings": security_findings,
         "pipeline_history": [json.loads(run.model_dump_json()) for run in history],
     }

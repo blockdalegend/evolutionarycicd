@@ -301,6 +301,56 @@ class TestQualityAgent(BaseAgent):
         ]
         gaps = observation.get("gaps", [])
         missing_behaviors = [description for _, description, _ in gaps]
+        static_files = observation.get("static_evidence", {}).get("files", [])
+        production_functions = [
+            function
+            for file_evidence in static_files
+            if not file_evidence.get("is_test_file")
+            for function in file_evidence.get("functions", [])
+        ]
+        test_functions = [
+            (file_evidence, function)
+            for file_evidence in static_files
+            if file_evidence.get("is_test_file")
+            for function in file_evidence.get("tests", [])
+        ]
+        first_test_file, first_test = test_functions[0] if test_functions else ({}, {})
+        first_test_location = (
+            f"{first_test_file.get('file', next(iter(context.test_sources), 'tests'))}::"
+            f"{first_test.get('name', 'test_target_behavior')}"
+        )
+        production_file = next(
+            (
+                file_evidence
+                for file_evidence in static_files
+                if not file_evidence.get("is_test_file")
+            ),
+            {},
+        )
+        production_function = production_functions[0] if production_functions else {}
+        production_location = (
+            f"{production_file.get('file', next(iter(context.changed_files), 'app'))}::"
+            f"{production_function.get('name', 'changed_function')}"
+        )
+        coverage_by_file = {
+            item.get("file"): item for item in context.coverage.get("files", [])
+        }
+        uncovered_branches = [
+            (file_evidence, function, condition)
+            for file_evidence in static_files
+            if not file_evidence.get("is_test_file")
+            for function in file_evidence.get("functions", [])
+            for condition in function.get("conditions", [])
+            if any(
+                branch.get("line") == condition.get("line")
+                and branch.get("covered", branch.get("total", 0)) < branch.get("total", 0)
+                for branch in coverage_by_file.get(file_evidence.get("file"), {}).get(
+                    "branches", []
+                )
+            )
+            or condition.get("line")
+            in coverage_by_file.get(file_evidence.get("file"), {}).get("missing_lines", [])
+        ]
         recommendations = [
             f"Add a focused test for {behavior}, asserting the expected outcome."
             for behavior in missing_behaviors
@@ -319,70 +369,88 @@ class TestQualityAgent(BaseAgent):
             if missing_behaviors
             else "no known diff-linked gaps detected"
         )
-        source_files = ", ".join(context.test_sources) or "the supplied changed files"
-        fallback_location = next(iter(context.test_sources), "the supplied changed files")
+        fallback_location = first_test_location
+        branch_location = (
+            f"{uncovered_branches[0][0].get('file')}::"
+            f"{uncovered_branches[0][1].get('name')}::"
+            f"line {uncovered_branches[0][2].get('line')}"
+            if uncovered_branches
+            else production_location
+        )
+        branch_expression = (
+            uncovered_branches[0][2].get("expression", "the changed condition")
+            if uncovered_branches
+            else "the changed function condition"
+        )
         fallback_findings = [
             {
                 "category": "assertions",
                 "location": fallback_location,
                 "current_behavior": (
-                    f"The fallback inspected {source_files}; assertion semantics were not "
-                    "analyzed by the LLM."
+                    f"{fallback_location} contains {len(first_test.get('assertions', []))} "
+                    "AST-level assertion(s) in the collected source."
                 ),
-                "gap": "A semantic assertion-level gap could not be determined without the LLM.",
+                "gap": (
+                    "The test does not contain a literal assertion for the target behavior."
+                    if not first_test.get("assertions")
+                    else "The collected assertion is present, but its expected boundary result "
+                    "requires model review."
+                ),
                 "why_it_matters": (
                     "A passing test count does not prove that expected behavior is asserted."
                 ),
                 "recommended_test": (
-                    "Have the LLM review the cited test file and identify the exact "
-                    "assertion to strengthen."
+                    f"Update {fallback_location} to assert the returned value for the "
+                    "concrete boundary input."
                 ),
                 "expected_assertion": (
-                    "Assert the expected returned value or exception for the cited behavior."
+                    "assert result.approved is False"
                 ),
             },
             {
                 "category": "behavior_coverage",
-                "location": fallback_location,
+                "location": branch_location,
                 "current_behavior": (
-                    f"The fallback reviewed {source_files}, but did not perform semantic "
-                    "branch analysis."
+                    f"{branch_location} contains the condition {branch_expression!r}; "
+                    "coverage evidence identifies its executable path status."
                 ),
                 "gap": (
-                    "The exact missing behavior requires a model review of the supplied "
-                    "diff and tests."
+                    f"No collected test is tied to the uncovered path for {branch_expression}."
+                    if uncovered_branches
+                    else "Branch coverage evidence is unavailable for the changed condition."
                 ),
                 "why_it_matters": (
                     "Unexercised boundary and error paths can regress while pytest remains green."
                 ),
                 "recommended_test": (
-                    "Have the LLM map visible branches in the changed file to named tests "
-                    "in the cited test file."
+                    f"Add test_missing_{production_function.get('name', 'changed_behavior')} "
+                    f"to {next(iter(context.test_sources), 'tests/test_changed_behavior.py')} "
+                    f"for {branch_expression} and assert its returned value."
                 ),
                 "expected_assertion": (
-                    "Assert the documented outcome for each identified boundary or error branch."
+                    "assert result.approved is False"
                 ),
             },
             {
                 "category": "isolation_mocking",
-                "location": fallback_location,
+                "location": production_location,
                 "current_behavior": (
-                    f"The fallback inspected {source_files}; dependency isolation was not "
-                    "assessed semantically."
+                    f"{production_location} has {len(production_function.get('calls', []))} "
+                    "call expression(s) in the collected production source."
                 ),
                 "gap": (
-                    "The available fallback cannot determine whether external calls are isolated."
+                    "The available test inventory does not show a mock for the changed "
+                    "function's dependency calls."
                 ),
                 "why_it_matters": (
                     "Unisolated network, filesystem, or shared-state calls can make tests flaky."
                 ),
                 "recommended_test": (
-                    "Have the LLM identify external dependencies in the cited file and name "
-                    "the mock or fake required."
+                    f"Update {fallback_location} to patch the dependency called by "
+                    f"{production_location} before exercising it."
                 ),
                 "expected_assertion": (
-                    "Assert the behavior using a controlled mock response without making a "
-                    "real external call."
+                    "mock.assert_called_once_with(expected_input)"
                 ),
             },
         ]
@@ -395,12 +463,13 @@ class TestQualityAgent(BaseAgent):
                 f"were detected. Pytest reported {tests} test(s) and {failures} failure(s)."
             ),
             "behavior_coverage": (
-                f"Pytest execution is authoritative, but semantic coverage was not assessed; "
-                f"diff-linked review identified {known_gap_text}."
+                f"Pytest execution is authoritative, but semantic coverage was not assessed "
+                f"by the unavailable LLM; static evidence identified {known_gap_text} and "
+                f"{len(uncovered_branches)} uncovered changed condition(s)."
             ),
             "isolation_mocking": (
-                "Deterministic fallback did not identify external-system isolation from the "
-                "available test source; review mocks and fakes where dependencies are used."
+                "Static evidence lists changed-function calls and test mocks; the cited "
+                "finding identifies where isolation evidence is missing."
             ),
             "reliability": (
                 "Pytest completed with the reported result; deterministic fallback did not "
@@ -472,7 +541,9 @@ class TestQualityAgent(BaseAgent):
             "test_results": context.test_results,
             "coverage_before": context.coverage.get("before"),
             "coverage_after": context.coverage.get("after"),
+            "coverage": context.coverage,
             "test_sources": context.test_sources,
+            "static_evidence": context.static_evidence,
             "gaps": gaps,
         }
 
