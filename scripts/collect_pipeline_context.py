@@ -10,8 +10,10 @@ from __future__ import annotations
 import json
 import os
 import sys
-import xml.etree.ElementTree as ET
+import tempfile
 from pathlib import Path
+
+from defusedxml import ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -32,8 +34,9 @@ def _read_json(path: Path) -> object:
 
 def _find_artifact(name: str) -> Path:
     """Resolve a CI artifact from the configured directory or common temp paths."""
-    artifact_dir = Path(os.environ.get("AGENT_ARTIFACT_DIR", "/tmp"))
-    for candidate in (artifact_dir / name, Path.cwd() / name, Path("/tmp") / name):
+    artifact_dir = Path(os.environ.get("AGENT_ARTIFACT_DIR", tempfile.gettempdir()))
+    temp_dir = Path(tempfile.gettempdir())
+    for candidate in (artifact_dir / name, Path.cwd() / name, temp_dir / name):
         if candidate.exists():
             return candidate
     return artifact_dir / name
