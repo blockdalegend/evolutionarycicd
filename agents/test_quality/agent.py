@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -60,15 +60,15 @@ def test_validate_payment_rejects_gift_card_over_limit():
 class TestQualityReport(BaseModel):
     """Structured quality findings returned by the dedicated quality request."""
 
-    rating: str
-    score: int
-    assertions: str
-    behavior_coverage: str
-    isolation_mocking: str
-    reliability: str
-    weak_tests: list[str] = Field(default_factory=list)
-    missing_behaviors: list[str] = Field(default_factory=list)
-    recommendations: list[str] = Field(default_factory=list)
+    rating: Literal["Excellent", "Good", "Needs improvement", "Poor"]
+    score: int = Field(ge=0, le=100)
+    assertions: str = Field(min_length=20)
+    behavior_coverage: str = Field(min_length=20)
+    isolation_mocking: str = Field(min_length=20)
+    reliability: str = Field(min_length=20)
+    weak_tests: list[str] = Field(default_factory=list, max_length=5)
+    missing_behaviors: list[str] = Field(default_factory=list, max_length=5)
+    recommendations: list[str] = Field(default_factory=list, max_length=5)
 
 
 class TestQualityAgent(BaseAgent):
@@ -93,6 +93,37 @@ class TestQualityAgent(BaseAgent):
                         normalized[field] = parsed[alternative]
                         break
         return normalized
+
+    @staticmethod
+    def _validate_quality_report(parsed: dict[str, Any]) -> dict[str, Any]:
+        """Reject reports that are structurally valid but semantically useless."""
+        report = TestQualityReport.model_validate(
+            TestQualityAgent._normalize_quality_report(parsed)
+        )
+        expected_rating = (
+            "Excellent"
+            if report.score >= 90
+            else "Good"
+            if report.score >= 75
+            else "Needs improvement"
+            if report.score >= 50
+            else "Poor"
+        )
+        if report.rating != expected_rating:
+            raise ValueError(
+                f"rating {report.rating!r} does not match score {report.score}; "
+                f"expected {expected_rating!r}"
+            )
+        for field in (
+            "assertions",
+            "behavior_coverage",
+            "isolation_mocking",
+            "reliability",
+        ):
+            value = getattr(report, field).strip()
+            if value.isdigit() or value.lower() in {"testing", "unknown", "n/a"}:
+                raise ValueError(f"{field} is not a substantive assessment")
+        return report.model_dump()
 
     name = "test_quality_agent"
 
@@ -150,9 +181,7 @@ class TestQualityAgent(BaseAgent):
         try:
             if not isinstance(parsed, dict):
                 return None
-            return TestQualityReport.model_validate(
-                TestQualityAgent._normalize_quality_report(parsed)
-            ).model_dump()
+            return TestQualityAgent._validate_quality_report(parsed)
         except ValueError as exc:
             logger.warning("Detailed test-quality LLM report did not match schema: %s", exc)
             return None
@@ -169,26 +198,44 @@ class TestQualityAgent(BaseAgent):
         ]
         gaps = observation.get("gaps", [])
         missing_behaviors = [description for _, description, _ in gaps]
-        recommendations = list(missing_behaviors)
+        recommendations = [
+            f"Add a focused test for {behavior}, asserting the expected outcome."
+            for behavior in missing_behaviors
+        ]
         if not recommendations:
             recommendations.append(
-                "Review boundary, error-path, and security cases beyond line coverage."
+                "Review boundary and error-path behavior in the changed code, then add "
+                "tests that assert returned values or raised exceptions."
             )
         tests = context.test_results.get("tests", "unknown")
         failures = context.test_results.get("failures_count", "unknown")
+        assertion_count = sum(source.count("assert ") for source in context.test_sources.values())
+        weak_test_count = len(weak_tests)
+        known_gap_text = (
+            ", ".join(missing_behaviors)
+            if missing_behaviors
+            else "no known diff-linked gaps detected"
+        )
         return {
             "rating": "Needs improvement" if weak_tests or missing_behaviors else "Good",
             "score": 60 if weak_tests or missing_behaviors else 75,
             "assertions": (
-                f"Deterministic fallback reviewed {len(context.test_sources)} test source file(s); "
-                f"pytest reported {tests} test(s) and {failures} failure(s)."
+                f"Reviewed {len(context.test_sources)} test source file(s) and found "
+                f"{assertion_count} assertion(s); {weak_test_count} unconditional assertion(s) "
+                f"were detected. Pytest reported {tests} test(s) and {failures} failure(s)."
             ),
             "behavior_coverage": (
-                "LLM assessment unavailable; deterministic checks cannot establish semantic "
-                "behavior coverage."
+                f"Pytest execution is authoritative, but semantic coverage was not assessed; "
+                f"diff-linked review identified {known_gap_text}."
             ),
-            "isolation_mocking": "LLM assessment unavailable.",
-            "reliability": "LLM assessment unavailable.",
+            "isolation_mocking": (
+                "Deterministic fallback did not identify external-system isolation from the "
+                "available test source; review mocks and fakes where dependencies are used."
+            ),
+            "reliability": (
+                "Pytest completed with the reported result; deterministic fallback did not "
+                "execute additional reliability or flakiness analysis."
+            ),
             "weak_tests": weak_tests,
             "missing_behaviors": missing_behaviors,
             "recommendations": recommendations,
@@ -264,7 +311,16 @@ class TestQualityAgent(BaseAgent):
         decision = self.reason_with_llm(
             context, observation, fallback, "test_quality.md", ["execute_tests"]
         )
-        if not isinstance(decision.arguments.get("quality_report"), dict):
+        quality_report = decision.arguments.get("quality_report")
+        try:
+            if isinstance(quality_report, dict):
+                decision.arguments["quality_report"] = self._validate_quality_report(
+                    quality_report
+                )
+            else:
+                raise ValueError("quality_report is missing")
+        except (TypeError, ValueError) as exc:
+            logger.warning("Ignoring invalid primary test-quality report: %s", exc)
             quality_report = self._request_quality_report(context, observation)
             decision.arguments["quality_report"] = (
                 quality_report

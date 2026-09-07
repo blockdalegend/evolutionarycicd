@@ -85,11 +85,15 @@ Identify:
 - Prefer two or three high-signal findings over a long list of generic advice.
 
 Put the detailed assessment in `arguments.quality_report` with these keys:
-`rating` (Excellent, Good, Needs improvement, or Poor), `score` (0-100),
+`rating` (exactly Excellent, Good, Needs improvement, or Poor), `score` (0-100
+and consistent with the rating),
 `assertions`, `behavior_coverage`, `isolation_mocking`, `reliability`,
 `weak_tests` (list), `missing_behaviors` (list), and `recommendations` (list).
 For this agent, always include `quality_report` in `arguments` when the
 context contains test sources or pytest results.
+Each narrative field must be a substantive sentence of at least 20 characters;
+never use a number, `testing`, `unknown`, or `n/a` as an assessment. Use these
+score bands: Excellent 90-100, Good 75-89, Needs improvement 50-74, Poor 0-49.
 Keep `reason` as a concise overall summary. Do not treat line coverage as a
 proxy for test quality.
 

@@ -88,6 +88,12 @@ def test_test_quality_llm_receives_test_source(monkeypatch) -> None:
                     "quality_report": {
                         "rating": "Poor",
                         "score": 15,
+                        "assertions": "test_weak uses an unconditional assertion.",
+                        "behavior_coverage": "test_weak does not verify application behavior.",
+                        "isolation_mocking": "No dependency isolation is shown in test_weak.",
+                        "reliability": (
+                            "The unconditional assertion can pass without executing behavior."
+                        ),
                         "weak_tests": ["test_weak"],
                     }
                 },
@@ -159,7 +165,7 @@ def test_test_quality_uses_transparent_fallback_when_report_fails(monkeypatch) -
 
     assert report["rating"] == "Needs improvement"
     assert "tests/test_weak.py" in report["weak_tests"][0]
-    assert "LLM assessment unavailable" in report["behavior_coverage"]
+    assert "semantic coverage was not assessed" in report["behavior_coverage"]
 
 
 def test_test_quality_accepts_json_wrapped_in_markdown(monkeypatch) -> None:
@@ -213,6 +219,59 @@ def test_test_quality_normalizes_provider_report_field_names(monkeypatch) -> Non
 
     assert decision.arguments["quality_report"]["rating"] == "Good"
     assert decision.arguments["quality_report"]["score"] == 80
+
+
+def test_test_quality_rejects_numeric_or_shallow_report(monkeypatch) -> None:
+    responses = iter(
+        [
+            LLMResponse(
+                success=True,
+                parsed={
+                    "action": "no_action",
+                    "reason": "I need help generating a comprehensive list of gaps.",
+                    "arguments": {
+                        "quality_report": {
+                            "rating": 4,
+                            "score": 4,
+                            "assertions": "testing",
+                            "behavior_coverage": 90,
+                            "isolation_mocking": 90,
+                            "reliability": 90,
+                        }
+                    },
+                    "confidence": 0.5,
+                    "requires_approval": False,
+                },
+            ),
+            LLMResponse(
+                success=True,
+                parsed={
+                    "rating": "Needs improvement",
+                    "score": 60,
+                    "assertions": "Tests assert key returned values and errors.",
+                    "behavior_coverage": (
+                        "Core paths pass; two visible boundary branches lack tests."
+                    ),
+                    "isolation_mocking": "The supplied tests do not use external dependencies.",
+                    "reliability": "Pytest completed successfully with deterministic local tests.",
+                    "weak_tests": [],
+                    "missing_behaviors": ["zero-dollar transaction branch"],
+                    "recommendations": ["Test the zero-dollar transaction branch."],
+                },
+            ),
+        ]
+    )
+    monkeypatch.setattr("agents.base.LLMClient.complete", lambda *_args: next(responses))
+
+    decision = TestQualityAgent().reason(
+        AgentContext(test_results={"tests": 34, "failures_count": 0}),
+        TestQualityAgent().observe(AgentContext(test_results={"tests": 34})),
+    )
+
+    report = decision.arguments["quality_report"]
+    assert report["rating"] == "Needs improvement"
+    assert report["score"] == 60
+    assert report["assertions"] != "testing"
 
 
 def test_llm_client_uses_defaults_for_empty_environment(monkeypatch) -> None:
