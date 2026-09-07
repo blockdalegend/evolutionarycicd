@@ -82,12 +82,35 @@ Identify:
 - Each `weak_tests`, `missing_behaviors`, and `recommendations` item must be
   specific and actionable. Include a test name or source location when one is
   available, and explain why a recommended test matters.
+- When the supplied diff exposes an untested branch, include that branch in
+  `missing_behaviors` and add a matching recommendation. When a supplied test
+  source contains `assert True`, include its file in `weak_tests`. Do not leave
+  these lists empty when the context contains those facts.
 - Prefer two or three high-signal findings over a long list of generic advice.
+- Populate `findings` with the detailed reasoning that drives the report. Each
+  finding must use this object shape:
+  `location`, `current_behavior`, `gap`, `why_it_matters`,
+  `recommended_test`, and `expected_assertion`.
+- `location` must identify an exact file and, when available, a test function,
+  production function, branch, or line visible in the supplied context. For
+  example, use `tests/test_payment_service.py::test_validate_payment_rejects`
+  only when both the file and test name appear in the supplied data.
+- `current_behavior` must describe what the cited test or code currently does.
+  `gap` must state the specific missing assertion, branch, error path, or
+  isolation boundary. `why_it_matters` must explain the user-visible or
+  regression risk. `recommended_test` must name the concrete test/code change
+  and file, and `expected_assertion` must state the result or exception to
+  assert. Do not fill these fields with generic testing advice.
+- Generate findings from the supplied context for this run. Never copy a
+  repository-specific gap from memory or assume a file, function, branch, or
+  behavior that is not present in the context. An empty `findings` list is
+  correct when no evidence-backed issue can be identified.
 
 Put the detailed assessment in `arguments.quality_report` with these keys:
 `rating` (exactly Excellent, Good, Needs improvement, or Poor), `score` (0-100
 and consistent with the rating),
 `assertions`, `behavior_coverage`, `isolation_mocking`, `reliability`,
+`findings` (list of detailed evidence-backed finding objects),
 `weak_tests` (list), `missing_behaviors` (list), and `recommendations` (list).
 For this agent, always include `quality_report` in `arguments` when the
 context contains test sources or pytest results.

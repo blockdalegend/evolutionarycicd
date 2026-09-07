@@ -66,9 +66,21 @@ class TestQualityReport(BaseModel):
     behavior_coverage: str = Field(min_length=20)
     isolation_mocking: str = Field(min_length=20)
     reliability: str = Field(min_length=20)
+    findings: list[TestQualityFinding] = Field(default_factory=list, max_length=5)
     weak_tests: list[str] = Field(default_factory=list, max_length=5)
     missing_behaviors: list[str] = Field(default_factory=list, max_length=5)
     recommendations: list[str] = Field(default_factory=list, max_length=5)
+
+
+class TestQualityFinding(BaseModel):
+    """One evidence-backed issue and its concrete remediation."""
+
+    location: str = Field(min_length=3)
+    current_behavior: str = Field(min_length=20)
+    gap: str = Field(min_length=20)
+    why_it_matters: str = Field(min_length=20)
+    recommended_test: str = Field(min_length=20)
+    expected_assertion: str = Field(min_length=10)
 
 
 class TestQualityAgent(BaseAgent):
@@ -125,6 +137,25 @@ class TestQualityAgent(BaseAgent):
                 raise ValueError(f"{field} is not a substantive assessment")
         return report.model_dump()
 
+    @staticmethod
+    def _validate_finding_evidence(
+        report: dict[str, Any], context: AgentContext, observation: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Keep model detail only when its cited location exists in the evidence."""
+        validated = TestQualityAgent._validate_quality_report(report)
+        evidence = json.dumps(
+            {"context": context.model_dump(), "observation": observation},
+            default=str,
+        )
+        for finding in validated.get("findings", []):
+            location = finding["location"].strip()
+            location_parts = [part.strip() for part in location.split("::") if part.strip()]
+            if not location_parts or not all(part in evidence for part in location_parts):
+                raise ValueError(
+                    f"finding location is not present in supplied evidence: {location}"
+                )
+        return validated
+
     name = "test_quality_agent"
 
     @staticmethod
@@ -147,7 +178,9 @@ class TestQualityAgent(BaseAgent):
                         "completeness. Score 0 only when tests provide no meaningful "
                         "evidence; use 50-74 for meaningful tests with important gaps. "
                         "Keep each narrative field under 60 words and each list to "
-                        "at most 3 high-signal items."
+                        "at most 3 high-signal items. For every finding, explain the "
+                        "current behavior, the concrete gap, why it matters, the exact "
+                        "test or code change to make, and the expected assertion."
                     ),
                 ),
                 LLMMessage(
@@ -181,7 +214,7 @@ class TestQualityAgent(BaseAgent):
         try:
             if not isinstance(parsed, dict):
                 return None
-            return TestQualityAgent._validate_quality_report(parsed)
+            return TestQualityAgent._validate_finding_evidence(parsed, context, observation)
         except ValueError as exc:
             logger.warning("Detailed test-quality LLM report did not match schema: %s", exc)
             return None
@@ -236,6 +269,7 @@ class TestQualityAgent(BaseAgent):
                 "Pytest completed with the reported result; deterministic fallback did not "
                 "execute additional reliability or flakiness analysis."
             ),
+            "findings": [],
             "weak_tests": weak_tests,
             "missing_behaviors": missing_behaviors,
             "recommendations": recommendations,
@@ -263,6 +297,23 @@ class TestQualityAgent(BaseAgent):
             values = report.get(key, [])
             if isinstance(values, list) and values:
                 sections.append(f"{label}:\n" + "\n".join(f"- {value}" for value in values))
+        findings = report.get("findings", [])
+        if isinstance(findings, list) and findings:
+            rendered_findings = []
+            for finding in findings:
+                rendered_findings.append(
+                    "- "
+                    + finding["location"]
+                    + ": "
+                    + finding["gap"]
+                    + " Why: "
+                    + finding["why_it_matters"]
+                    + " Fix: "
+                    + finding["recommended_test"]
+                    + " Assert: "
+                    + finding["expected_assertion"]
+                )
+            sections.append("Detailed findings:\n" + "\n".join(rendered_findings))
         decision.reason = decision.reason + "\n\n" + "\n".join(sections)
         return decision
 
@@ -327,6 +378,19 @@ class TestQualityAgent(BaseAgent):
                 if quality_report is not None
                 else self._fallback_quality_report(context, observation)
             )
+        else:
+            try:
+                decision.arguments["quality_report"] = self._validate_finding_evidence(
+                    decision.arguments["quality_report"], context, observation
+                )
+            except ValueError as exc:
+                logger.warning("Ignoring unsupported primary test-quality findings: %s", exc)
+                report = self._request_quality_report(context, observation)
+                decision.arguments["quality_report"] = (
+                    report
+                    if report is not None
+                    else self._fallback_quality_report(context, observation)
+                )
         decision = self._render_quality_report(decision)
         results = context.test_results
         tests = results.get("tests") if isinstance(results, dict) else None

@@ -130,10 +130,23 @@ def test_test_quality_requests_report_when_decision_omits_it(monkeypatch) -> Non
                 parsed={
                     "rating": "Good",
                     "score": 82,
-                    "assertions": "Assertions verify returned values and policy outcomes.",
-                    "behavior_coverage": "Core paths are covered; edge cases remain.",
-                    "isolation_mocking": "External GitHub and LLM calls are isolated.",
-                    "reliability": "Tests are deterministic.",
+                        "assertions": (
+                            "Assertions verify returned values and policy outcomes "
+                            "for the exercised paths."
+                        ),
+                        "behavior_coverage": (
+                            "Core paths are covered; edge cases remain visible in "
+                            "the supplied diff."
+                        ),
+                        "isolation_mocking": (
+                            "External GitHub and LLM calls are isolated by the "
+                            "supplied test setup."
+                        ),
+                        "reliability": (
+                            "The supplied test results indicate a deterministic "
+                            "completed run."
+                        ),
+                        "findings": [],
                     "weak_tests": [],
                     "missing_behaviors": ["Malformed context input"],
                     "recommendations": ["Add malformed context coverage"],
@@ -173,10 +186,11 @@ def test_test_quality_accepts_json_wrapped_in_markdown(monkeypatch) -> None:
     {
       "rating": "Good",
       "score": 80,
-      "assertions": "Behavior is asserted.",
-      "behavior_coverage": "Core paths are covered.",
-      "isolation_mocking": "Dependencies are isolated.",
-      "reliability": "Tests are deterministic.",
+          "assertions": "Behavior is asserted through returned values and errors.",
+          "behavior_coverage": "Core paths are covered by the supplied test results.",
+          "isolation_mocking": "Dependencies are isolated in the supplied test setup.",
+          "reliability": "The supplied tests complete deterministically without failures.",
+          "findings": [],
       "weak_tests": [],
       "missing_behaviors": [],
       "recommendations": []
@@ -195,7 +209,7 @@ def test_test_quality_accepts_json_wrapped_in_markdown(monkeypatch) -> None:
     decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
 
     assert decision.arguments["quality_report"]["score"] == 80
-    assert "Behavior is asserted." in decision.reason
+    assert "Behavior is asserted through returned values" in decision.reason
 
 
 def test_test_quality_normalizes_provider_report_field_names(monkeypatch) -> None:
@@ -204,12 +218,29 @@ def test_test_quality_normalizes_provider_report_field_names(monkeypatch) -> Non
         lambda _client, _request: LLMResponse(
             success=True,
             parsed={
-                "overall_rating": "Good",
-                "quality_score": 80,
-                "assertion_analysis": "Behavior is asserted.",
-                "coverage_analysis": "Core paths are covered.",
-                "mocking_analysis": "Dependencies are isolated.",
-                "reliability_analysis": "Tests are deterministic.",
+                "action": "report_test_quality",
+                "reason": "The supplied tests provide useful behavioral evidence.",
+                "arguments": {
+                    "quality_report": {
+                        "overall_rating": "Good",
+                        "quality_score": 80,
+                        "assertion_analysis": (
+                            "Behavior is asserted through returned values and errors."
+                        ),
+                        "coverage_analysis": (
+                            "Core paths are covered by the supplied test results."
+                        ),
+                        "mocking_analysis": (
+                            "Dependencies are isolated in the supplied test setup."
+                        ),
+                        "reliability_analysis": (
+                            "The supplied tests complete deterministically without failures."
+                        ),
+                        "findings": [],
+                    }
+                },
+                "confidence": 0.8,
+                "requires_approval": False,
             },
         ),
     )
@@ -254,6 +285,7 @@ def test_test_quality_rejects_numeric_or_shallow_report(monkeypatch) -> None:
                     ),
                     "isolation_mocking": "The supplied tests do not use external dependencies.",
                     "reliability": "Pytest completed successfully with deterministic local tests.",
+                        "findings": [],
                     "weak_tests": [],
                     "missing_behaviors": ["zero-dollar transaction branch"],
                     "recommendations": ["Test the zero-dollar transaction branch."],
@@ -272,6 +304,116 @@ def test_test_quality_rejects_numeric_or_shallow_report(monkeypatch) -> None:
     assert report["rating"] == "Needs improvement"
     assert report["score"] == 60
     assert report["assertions"] != "testing"
+
+
+def test_test_quality_preserves_llm_finding_detail(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "agents.base.LLMClient.complete",
+        lambda *_args: LLMResponse(
+            success=True,
+            parsed={
+                "action": "no_action",
+                "reason": "The tests are mostly meaningful.",
+                "arguments": {
+                    "quality_report": {
+                        "rating": "Good",
+                        "score": 80,
+                        "assertions": "Tests assert returned values and expected exceptions.",
+                        "behavior_coverage": "Core behavior is covered, with one visible gap.",
+                        "isolation_mocking": "The tests use local objects without network calls.",
+                        "reliability": "The suite is deterministic and completed successfully.",
+                        "findings": [
+                            {
+                                "location": "tests/test_quality.py::test_source",
+                                "current_behavior": (
+                                    "test_source executes an unconditional assertion."
+                                ),
+                                "gap": (
+                                    "The test does not verify any application behavior or result."
+                                ),
+                                "why_it_matters": (
+                                    "It can pass while the behavior under review is broken."
+                                ),
+                                "recommended_test": (
+                                    "Replace it in tests/test_quality.py with a payment "
+                                    "outcome test."
+                                ),
+                                "expected_assertion": (
+                                    "Assert the returned approval value is False for invalid input."
+                                ),
+                            }
+                        ],
+                        "weak_tests": [],
+                        "missing_behaviors": [],
+                        "recommendations": [],
+                    }
+                },
+                "confidence": 0.8,
+                "requires_approval": False,
+            },
+        ),
+    )
+    context = AgentContext(
+        diff="amount == 0",
+        test_sources={"tests/test_quality.py": "def test_source(): assert True"},
+    )
+
+    decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
+    report = decision.arguments["quality_report"]
+
+    assert report["findings"][0]["location"] == "tests/test_quality.py::test_source"
+    assert "payment outcome" in report["findings"][0]["recommended_test"]
+    assert "Detailed findings:" in decision.reason
+
+
+def test_test_quality_rejects_finding_outside_context(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "agents.base.LLMClient.complete",
+        lambda *_args: LLMResponse(
+            success=True,
+            parsed={
+                "action": "report_test_quality",
+                "reason": "The supplied tests need a specific behavioral check.",
+                "arguments": {
+                    "quality_report": {
+                        "rating": "Needs improvement",
+                        "score": 60,
+                        "assertions": "The supplied test source contains a weak assertion.",
+                        "behavior_coverage": "The supplied context shows only a narrow test path.",
+                        "isolation_mocking": (
+                            "No external dependency is visible in the supplied source."
+                        ),
+                        "reliability": "The local assertion is deterministic but not meaningful.",
+                        "findings": [
+                            {
+                                "location": "tests/missing.py::test_unknown",
+                                "current_behavior": (
+                                    "The cited test is not present in the supplied context."
+                                ),
+                                "gap": "The missing test cannot be assessed from this evidence.",
+                                "why_it_matters": (
+                                    "Unsupported citations make the report unverifiable."
+                                ),
+                                "recommended_test": (
+                                    "Inspect the supplied files before proposing a test."
+                                ),
+                                "expected_assertion": (
+                                    "Use an assertion grounded in an observed behavior."
+                                ),
+                            }
+                        ],
+                    }
+                },
+                "confidence": 0.8,
+                "requires_approval": False,
+            },
+        ),
+    )
+    context = AgentContext(test_sources={"tests/test_quality.py": "def test_source(): assert True"})
+
+    decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
+
+    assert decision.arguments["quality_report"].get("findings", []) == []
 
 
 def test_llm_client_uses_defaults_for_empty_environment(monkeypatch) -> None:
