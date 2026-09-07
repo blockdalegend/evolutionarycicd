@@ -8,6 +8,7 @@ known gaps; it never merges or silently commits anything itself.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -16,9 +17,11 @@ from pydantic import BaseModel, Field
 from agents.base import AgentContext, AgentDecision, BaseAgent
 from llm.client import LLMClient
 from llm.models import LLMMessage, LLMRequest
+from telemetry.logger import get_logger
 from tools.testing.pytest_tools import run_pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+logger = get_logger(__name__)
 
 #: Heuristics mapping a keyword that might appear in a diff to a recommended
 #: test description and a ready-to-run candidate pytest test. This keeps the
@@ -105,12 +108,60 @@ class TestQualityAgent(BaseAgent):
             max_tokens=1200,
         )
         response = LLMClient().complete(request)
-        if not response.success or response.parsed is None:
+        parsed = response.parsed
+        if parsed is None and response.content:
+            content = response.content.strip()
+            if content.startswith("```"):
+                content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            try:
+                parsed = json.loads(content[content.find("{") : content.rfind("}") + 1])
+            except (json.JSONDecodeError, ValueError):
+                parsed = None
+        if not response.success and parsed is None:
+            logger.warning("Detailed test-quality LLM report unavailable: %s", response.error)
             return None
         try:
-            return TestQualityReport.model_validate(response.parsed).model_dump()
-        except ValueError:
+            return TestQualityReport.model_validate(parsed).model_dump()
+        except ValueError as exc:
+            logger.warning("Detailed test-quality LLM report did not match schema: %s", exc)
             return None
+
+    @staticmethod
+    def _fallback_quality_report(
+        context: AgentContext, observation: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Provide transparent deterministic findings when the LLM report fails."""
+        weak_tests = [
+            f"{path} contains an unconditional assertion (assert True)."
+            for path, source in context.test_sources.items()
+            if "assert True" in source
+        ]
+        gaps = observation.get("gaps", [])
+        missing_behaviors = [description for _, description, _ in gaps]
+        recommendations = list(missing_behaviors)
+        if not recommendations:
+            recommendations.append(
+                "Review boundary, error-path, and security cases beyond line coverage."
+            )
+        tests = context.test_results.get("tests", "unknown")
+        failures = context.test_results.get("failures_count", "unknown")
+        return {
+            "rating": "Needs improvement" if weak_tests or missing_behaviors else "Good",
+            "score": 60 if weak_tests or missing_behaviors else 75,
+            "assertions": (
+                f"Deterministic fallback reviewed {len(context.test_sources)} test source file(s); "
+                f"pytest reported {tests} test(s) and {failures} failure(s)."
+            ),
+            "behavior_coverage": (
+                "LLM assessment unavailable; deterministic checks cannot establish semantic "
+                "behavior coverage."
+            ),
+            "isolation_mocking": "LLM assessment unavailable.",
+            "reliability": "LLM assessment unavailable.",
+            "weak_tests": weak_tests,
+            "missing_behaviors": missing_behaviors,
+            "recommendations": recommendations,
+        }
 
     @staticmethod
     def _render_quality_report(decision: AgentDecision) -> AgentDecision:
@@ -184,8 +235,11 @@ class TestQualityAgent(BaseAgent):
         )
         if not isinstance(decision.arguments.get("quality_report"), dict):
             quality_report = self._request_quality_report(context, observation)
-            if quality_report is not None:
-                decision.arguments["quality_report"] = quality_report
+            decision.arguments["quality_report"] = (
+                quality_report
+                if quality_report is not None
+                else self._fallback_quality_report(context, observation)
+            )
         decision = self._render_quality_report(decision)
         results = context.test_results
         tests = results.get("tests") if isinstance(results, dict) else None

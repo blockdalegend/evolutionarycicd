@@ -144,6 +144,54 @@ def test_test_quality_requests_report_when_decision_omits_it(monkeypatch) -> Non
     assert "Malformed context input" in decision.reason
 
 
+def test_test_quality_uses_transparent_fallback_when_report_fails(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "agents.base.LLMClient.complete",
+        lambda _client, _request: LLMResponse(success=False, error="unavailable"),
+    )
+    context = AgentContext(
+        test_results={"tests": 30, "failures_count": 0},
+        test_sources={"tests/test_weak.py": "def test_weak(): assert True"},
+    )
+
+    decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
+    report = decision.arguments["quality_report"]
+
+    assert report["rating"] == "Needs improvement"
+    assert "tests/test_weak.py" in report["weak_tests"][0]
+    assert "LLM assessment unavailable" in report["behavior_coverage"]
+
+
+def test_test_quality_accepts_json_wrapped_in_markdown(monkeypatch) -> None:
+    report_json = """```json
+    {
+      "rating": "Good",
+      "score": 80,
+      "assertions": "Behavior is asserted.",
+      "behavior_coverage": "Core paths are covered.",
+      "isolation_mocking": "Dependencies are isolated.",
+      "reliability": "Tests are deterministic.",
+      "weak_tests": [],
+      "missing_behaviors": [],
+      "recommendations": []
+    }
+    ```"""
+    monkeypatch.setattr(
+        "agents.base.LLMClient.complete",
+        lambda _client, _request: LLMResponse(
+            success=False,
+            content=report_json,
+            error="failed to parse structured output",
+        ),
+    )
+    context = AgentContext(test_results={"tests": 30, "failures_count": 0})
+
+    decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
+
+    assert decision.arguments["quality_report"]["score"] == 80
+    assert "Behavior is asserted." in decision.reason
+
+
 def test_llm_client_uses_defaults_for_empty_environment(monkeypatch) -> None:
     monkeypatch.setenv("LLM_BASE_URL", "")
     monkeypatch.setenv("LLM_MODEL", "")
