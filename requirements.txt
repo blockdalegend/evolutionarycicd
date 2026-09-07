@@ -1,6 +1,6 @@
 # Core app
 pydantic==2.9.2
-python-dotenv==1.2.2
+python-dotenv==1.2.1
 PyYAML==6.0.2
 defusedxml==0.7.1
 

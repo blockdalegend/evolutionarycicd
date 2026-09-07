@@ -64,6 +64,7 @@ def _parse_junit(path: Path) -> dict[str, object]:
         root = ET.parse(path).getroot()
     except (OSError, ET.ParseError):
         return {}
+    suites = list(root.iter("testsuite"))
     failures: list[str] = []
     for case in root.iter("testcase"):
         if case.find("failure") is not None or case.find("error") is not None:
@@ -72,10 +73,14 @@ def _parse_junit(path: Path) -> dict[str, object]:
                 detail = case.find("error")
             message = (detail.text or "") if detail is not None else ""
             failures.append(f"{case.get('classname', '')}.{case.get('name', '')}: {message}")
+
+    def _suite_count(attribute: str) -> int:
+        return sum(int(suite.get(attribute, 0)) for suite in suites)
+
     return {
         "failures": failures,
-        "tests": int(root.get("tests", 0)),
-        "failures_count": int(root.get("failures", 0)) + int(root.get("errors", 0)),
+        "tests": _suite_count("tests") or int(root.get("tests", 0)),
+        "failures_count": _suite_count("failures") + _suite_count("errors"),
     }
 
 
