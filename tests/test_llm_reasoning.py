@@ -96,6 +96,7 @@ def test_test_quality_llm_receives_test_source(monkeypatch) -> None:
                         ),
                         "findings": [
                             {
+                                "category": "assertions",
                                 "location": "tests/test_weak.py",
                                 "current_behavior": (
                                     "The test executes assert True without calling "
@@ -116,7 +117,45 @@ def test_test_quality_llm_receives_test_source(monkeypatch) -> None:
                                 "expected_assertion": (
                                     "Assert the expected result for the exercised input."
                                 ),
-                            }
+                            },
+                            {
+                                "category": "behavior_coverage",
+                                "location": "tests/test_weak.py",
+                                "current_behavior": (
+                                    "The file contains only an unconditional assertion."
+                                ),
+                                "gap": (
+                                    "No test in this file exercises a visible application branch."
+                                ),
+                                "why_it_matters": (
+                                    "Important behavior can regress without a failing test."
+                                ),
+                                "recommended_test": (
+                                    "Add a named behavior test in tests/test_weak.py."
+                                ),
+                                "expected_assertion": "Assert the branch's documented result.",
+                            },
+                            {
+                                "category": "isolation_mocking",
+                                "location": "tests/test_weak.py",
+                                "current_behavior": (
+                                    "The file does not call or isolate an external dependency."
+                                ),
+                                "gap": (
+                                    "No mock boundary is demonstrated for dependencies used by "
+                                    "the behavior."
+                                ),
+                                "why_it_matters": (
+                                    "Uncontrolled dependencies can make the test slow or flaky."
+                                ),
+                                "recommended_test": (
+                                    "Mock the dependency in tests/test_weak.py if the behavior "
+                                    "calls one."
+                                ),
+                                "expected_assertion": (
+                                    "Assert the outcome using the controlled mock response."
+                                ),
+                            },
                         ],
                         "weak_tests": ["test_weak"],
                     }
@@ -348,6 +387,7 @@ def test_test_quality_preserves_llm_finding_detail(monkeypatch) -> None:
                         "reliability": "The suite is deterministic and completed successfully.",
                         "findings": [
                             {
+                                "category": "assertions",
                                 "location": "tests/test_quality.py::test_source",
                                 "current_behavior": (
                                     "test_source executes an unconditional assertion."
@@ -365,7 +405,41 @@ def test_test_quality_preserves_llm_finding_detail(monkeypatch) -> None:
                                 "expected_assertion": (
                                     "Assert the returned approval value is False for invalid input."
                                 ),
-                            }
+                            },
+                            {
+                                "category": "behavior_coverage",
+                                "location": "tests/test_quality.py::test_source",
+                                "current_behavior": "test_source executes the visible test body.",
+                                "gap": "The test does not cover the relevant behavior branch.",
+                                "why_it_matters": (
+                                    "A missing branch test can allow a regression to pass."
+                                ),
+                                "recommended_test": (
+                                    "Add the branch case to tests/test_quality.py::test_source."
+                                ),
+                                "expected_assertion": "Assert the expected result for that branch.",
+                            },
+                            {
+                                "category": "isolation_mocking",
+                                "location": "tests/test_quality.py::test_source",
+                                "current_behavior": (
+                                    "test_source uses only local inputs and no external calls."
+                                ),
+                                "gap": (
+                                    "The test does not demonstrate an isolation boundary for "
+                                    "dependencies."
+                                ),
+                                "why_it_matters": (
+                                    "Uncontrolled dependencies can make the test nondeterministic."
+                                ),
+                                "recommended_test": (
+                                    "Add a mock in tests/test_quality.py if the branch calls "
+                                    "an external dependency."
+                                ),
+                                "expected_assertion": (
+                                    "Assert the result from the controlled mock response."
+                                ),
+                            },
                         ],
                         "weak_tests": [],
                         "missing_behaviors": [],
@@ -410,6 +484,7 @@ def test_test_quality_rejects_finding_outside_context(monkeypatch) -> None:
                         "reliability": "The local assertion is deterministic but not meaningful.",
                         "findings": [
                             {
+                                "category": "assertions",
                                 "location": "tests/missing.py::test_unknown",
                                 "current_behavior": (
                                     "The cited test is not present in the supplied context."
@@ -437,7 +512,9 @@ def test_test_quality_rejects_finding_outside_context(monkeypatch) -> None:
 
     decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
 
-    assert decision.arguments["quality_report"].get("findings", []) == []
+    findings = decision.arguments["quality_report"].get("findings", [])
+    assert findings
+    assert all("tests/missing.py" not in finding["location"] for finding in findings)
 
 
 def test_test_quality_rejects_generic_report_with_test_sources(monkeypatch) -> None:

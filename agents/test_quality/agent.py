@@ -75,6 +75,7 @@ class TestQualityReport(BaseModel):
 class TestQualityFinding(BaseModel):
     """One evidence-backed issue and its concrete remediation."""
 
+    category: Literal["assertions", "behavior_coverage", "isolation_mocking", "reliability"]
     location: str = Field(min_length=3)
     current_behavior: str = Field(min_length=20)
     gap: str = Field(min_length=20)
@@ -149,6 +150,12 @@ class TestQualityAgent(BaseAgent):
             raise ValueError(
                 "detailed findings are required when test sources or diff gaps are supplied"
             )
+        if context.test_sources or observation.get("gaps"):
+            categories = {finding["category"] for finding in findings}
+            required_categories = {"assertions", "behavior_coverage", "isolation_mocking"}
+            if not required_categories.issubset(categories):
+                missing = ", ".join(sorted(required_categories - categories))
+                raise ValueError(f"findings are missing category detail: {missing}")
         evidence = json.dumps(
             {"context": context.model_dump(), "observation": observation},
             default=str,
@@ -192,7 +199,10 @@ class TestQualityAgent(BaseAgent):
                         "Keep each narrative field under 60 words and each list to "
                         "at most 3 high-signal items. For every finding, explain the "
                         "current behavior, the concrete gap, why it matters, the exact "
-                        "test or code change to make, and the expected assertion."
+                        "test or code change to make, and the expected assertion. "
+                        "Include at least one finding each for assertions, behavior_coverage, "
+                        "and isolation_mocking. If a category has no defect, cite the exact "
+                        "test file and explain what was checked and why no change is needed."
                     ),
                 ),
                 LLMMessage(
@@ -261,6 +271,73 @@ class TestQualityAgent(BaseAgent):
             if missing_behaviors
             else "no known diff-linked gaps detected"
         )
+        source_files = ", ".join(context.test_sources) or "the supplied changed files"
+        fallback_location = next(iter(context.test_sources), "the supplied changed files")
+        fallback_findings = [
+            {
+                "category": "assertions",
+                "location": fallback_location,
+                "current_behavior": (
+                    f"The fallback inspected {source_files}; assertion semantics were not "
+                    "analyzed by the LLM."
+                ),
+                "gap": "A semantic assertion-level gap could not be determined without the LLM.",
+                "why_it_matters": (
+                    "A passing test count does not prove that expected behavior is asserted."
+                ),
+                "recommended_test": (
+                    "Have the LLM review the cited test file and identify the exact "
+                    "assertion to strengthen."
+                ),
+                "expected_assertion": (
+                    "Assert the expected returned value or exception for the cited behavior."
+                ),
+            },
+            {
+                "category": "behavior_coverage",
+                "location": fallback_location,
+                "current_behavior": (
+                    f"The fallback reviewed {source_files}, but did not perform semantic "
+                    "branch analysis."
+                ),
+                "gap": (
+                    "The exact missing behavior requires a model review of the supplied "
+                    "diff and tests."
+                ),
+                "why_it_matters": (
+                    "Unexercised boundary and error paths can regress while pytest remains green."
+                ),
+                "recommended_test": (
+                    "Have the LLM map visible branches in the changed file to named tests "
+                    "in the cited test file."
+                ),
+                "expected_assertion": (
+                    "Assert the documented outcome for each identified boundary or error branch."
+                ),
+            },
+            {
+                "category": "isolation_mocking",
+                "location": fallback_location,
+                "current_behavior": (
+                    f"The fallback inspected {source_files}; dependency isolation was not "
+                    "assessed semantically."
+                ),
+                "gap": (
+                    "The available fallback cannot determine whether external calls are isolated."
+                ),
+                "why_it_matters": (
+                    "Unisolated network, filesystem, or shared-state calls can make tests flaky."
+                ),
+                "recommended_test": (
+                    "Have the LLM identify external dependencies in the cited file and name "
+                    "the mock or fake required."
+                ),
+                "expected_assertion": (
+                    "Assert the behavior using a controlled mock response without making a "
+                    "real external call."
+                ),
+            },
+        ]
         return {
             "rating": "Needs improvement" if weak_tests or missing_behaviors else "Good",
             "score": 60 if weak_tests or missing_behaviors else 75,
@@ -281,7 +358,7 @@ class TestQualityAgent(BaseAgent):
                 "Pytest completed with the reported result; deterministic fallback did not "
                 "execute additional reliability or flakiness analysis."
             ),
-            "findings": [],
+            "findings": fallback_findings,
             "weak_tests": weak_tests,
             "missing_behaviors": missing_behaviors,
             "recommendations": recommendations,
@@ -312,21 +389,26 @@ class TestQualityAgent(BaseAgent):
         findings = report.get("findings", [])
         if isinstance(findings, list) and findings:
             rendered_findings = []
-            for finding in findings:
-                rendered_findings.append(
-                    "- "
-                    + finding["location"]
-                    + ": Current: "
-                    + finding["current_behavior"]
-                    + " Gap: "
-                    + finding["gap"]
-                    + " Why: "
-                    + finding["why_it_matters"]
-                    + " Fix: "
-                    + finding["recommended_test"]
-                    + " Assert: "
-                    + finding["expected_assertion"]
-                )
+            for category in ("assertions", "behavior_coverage", "isolation_mocking", "reliability"):
+                for finding in findings:
+                    if finding.get("category") != category:
+                        continue
+                    rendered_findings.append(
+                        "- ["
+                        + category
+                        + "] "
+                        + finding["location"]
+                        + ": Current: "
+                        + finding["current_behavior"]
+                        + " Gap: "
+                        + finding["gap"]
+                        + " Why: "
+                        + finding["why_it_matters"]
+                        + " Fix: "
+                        + finding["recommended_test"]
+                        + " Assert: "
+                        + finding["expected_assertion"]
+                    )
             sections.append("Detailed findings:\n" + "\n".join(rendered_findings))
         decision.reason = decision.reason + "\n\n" + "\n".join(sections)
         return decision

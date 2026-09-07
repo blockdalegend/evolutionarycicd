@@ -91,8 +91,14 @@ Identify:
 - Prefer two or three high-signal findings over a long list of generic advice.
 - Populate `findings` with the detailed reasoning that drives the report. Each
   finding must use this object shape:
-  `location`, `current_behavior`, `gap`, `why_it_matters`,
+  `category`, `location`, `current_behavior`, `gap`, `why_it_matters`,
   `recommended_test`, and `expected_assertion`.
+- `category` must be one of `assertions`, `behavior_coverage`,
+  `isolation_mocking`, or `reliability`. When test sources or diff gaps are
+  supplied, include at least one finding for `assertions`,
+  `behavior_coverage`, and `isolation_mocking`, even when the finding says the
+  category is adequately covered. Each such finding must cite the exact file
+  that was checked.
 - `location` must identify an exact file and, when available, a test function,
   production function, branch, or line visible in the supplied context. For
   example, use `tests/test_payment_service.py::test_validate_payment_rejects`
