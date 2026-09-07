@@ -74,6 +74,26 @@ class TestQualityReport(BaseModel):
 class TestQualityAgent(BaseAgent):
     """Analyzes diff/coverage and proposes or validates missing tests."""
 
+    @staticmethod
+    def _normalize_quality_report(parsed: dict[str, Any]) -> dict[str, Any]:
+        """Map common provider synonyms to the report contract."""
+        aliases = {
+            "rating": ("overall_rating",),
+            "score": ("quality_score",),
+            "assertions": ("assertion_analysis",),
+            "behavior_coverage": ("coverage_analysis",),
+            "isolation_mocking": ("mocking_analysis", "isolation_analysis"),
+            "reliability": ("reliability_analysis",),
+        }
+        normalized = dict(parsed)
+        for field, alternatives in aliases.items():
+            if field not in normalized:
+                for alternative in alternatives:
+                    if alternative in parsed:
+                        normalized[field] = parsed[alternative]
+                        break
+        return normalized
+
     name = "test_quality_agent"
 
     @staticmethod
@@ -89,7 +109,8 @@ class TestQualityAgent(BaseAgent):
                         "Return only a JSON object matching the supplied schema. "
                         "Assess test quality from the authoritative pytest results, "
                         "coverage, changed files, diff, and test sources. Do not invent "
-                        "test results or coverage."
+                        "test results or coverage. Keep each narrative field under "
+                        "40 words and each list to at most 5 concise items."
                     ),
                 ),
                 LLMMessage(
@@ -105,7 +126,7 @@ class TestQualityAgent(BaseAgent):
             ],
             response_schema=TestQualityReport.model_json_schema(),
             temperature=0.1,
-            max_tokens=1200,
+            max_tokens=2400,
         )
         response = LLMClient().complete(request)
         parsed = response.parsed
@@ -121,7 +142,11 @@ class TestQualityAgent(BaseAgent):
             logger.warning("Detailed test-quality LLM report unavailable: %s", response.error)
             return None
         try:
-            return TestQualityReport.model_validate(parsed).model_dump()
+            if not isinstance(parsed, dict):
+                return None
+            return TestQualityReport.model_validate(
+                TestQualityAgent._normalize_quality_report(parsed)
+            ).model_dump()
         except ValueError as exc:
             logger.warning("Detailed test-quality LLM report did not match schema: %s", exc)
             return None

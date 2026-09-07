@@ -192,6 +192,29 @@ def test_test_quality_accepts_json_wrapped_in_markdown(monkeypatch) -> None:
     assert "Behavior is asserted." in decision.reason
 
 
+def test_test_quality_normalizes_provider_report_field_names(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "agents.base.LLMClient.complete",
+        lambda _client, _request: LLMResponse(
+            success=True,
+            parsed={
+                "overall_rating": "Good",
+                "quality_score": 80,
+                "assertion_analysis": "Behavior is asserted.",
+                "coverage_analysis": "Core paths are covered.",
+                "mocking_analysis": "Dependencies are isolated.",
+                "reliability_analysis": "Tests are deterministic.",
+            },
+        ),
+    )
+    context = AgentContext(test_results={"tests": 30, "failures_count": 0})
+
+    decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
+
+    assert decision.arguments["quality_report"]["rating"] == "Good"
+    assert decision.arguments["quality_report"]["score"] == 80
+
+
 def test_llm_client_uses_defaults_for_empty_environment(monkeypatch) -> None:
     monkeypatch.setenv("LLM_BASE_URL", "")
     monkeypatch.setenv("LLM_MODEL", "")
