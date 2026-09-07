@@ -35,16 +35,33 @@ Given:
 2. The PR diff.
 3. Existing test results.
 4. Code coverage before/after (when available).
+5. The contents of the repository's test files.
 
 Identify:
 
 - What changed.
+- Whether the tests assert meaningful behavior or merely execute code.
+- Weak tests, including `assert True`, unconditional passing assertions,
+  assertions that only check types or truthiness, and tests that do not reach
+  the behavior they claim to cover.
+- Whether tests isolate external systems with appropriate mocks/fakes and
+  whether shared state, network calls, time, randomness, or filesystem use
+  can make them unreliable.
+- What behavior, error paths, boundary conditions, and security cases are
+  missing, even when line coverage is high.
 - What appears insufficiently tested (specific branches/behaviors, not vague
   generalities).
 - What tests you recommend, and why.
 - Whether any generated candidate tests were executed, and whether they
   passed (from tool output only).
 - Before/after coverage, if available.
+
+Put the detailed assessment in `arguments.quality_report` with these keys:
+`rating` (Excellent, Good, Needs improvement, or Poor), `score` (0-100),
+`assertions`, `behavior_coverage`, `isolation_mocking`, `reliability`,
+`weak_tests` (list), `missing_behaviors` (list), and `recommendations` (list).
+Keep `reason` as a concise overall summary. Do not treat line coverage as a
+proxy for test quality.
 
 ## Output format
 
@@ -53,11 +70,20 @@ Identify:
 
 ### Test Quality
 
+Quality rating:
+<Excellent|Good|Needs improvement|Poor> (<0-100>/100)
+
 Coverage:
 <before>% → <after>%
 
 Observation:
-<what changed and what appears under-tested>
+<what changed and a concise assessment of whether the tests verify behavior>
+
+Quality findings:
+- Assertions: <meaningful, weak, or missing assertions, with test names>
+- Behavior coverage: <tested behavior versus important untested paths>
+- Isolation/mocking: <whether dependencies are isolated and why that matters>
+- Reliability: <flakiness or determinism risks>
 
 Recommended tests:
 - <test 1>
@@ -69,7 +95,8 @@ Agent actions:
 - <passed>/<total> passed
 
 Result:
-<summary>
+<summary explaining why the quality rating is justified; do not equate line
+coverage with test quality>
 
 Requires human approval: Yes|No
 ```

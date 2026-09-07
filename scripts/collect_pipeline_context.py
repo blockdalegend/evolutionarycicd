@@ -42,6 +42,20 @@ def _find_artifact(name: str) -> Path:
     return artifact_dir / name
 
 
+def _collect_test_sources(
+    root: Path, max_files: int = 40, max_bytes: int = 20000
+) -> dict[str, str]:
+    """Collect bounded test source excerpts for semantic quality review."""
+    sources: dict[str, str] = {}
+    for path in sorted(root.glob("tests/**/*.py"))[:max_files]:
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        sources[str(path.relative_to(root))] = content[:max_bytes]
+    return sources
+
+
 def _parse_junit(path: Path) -> dict[str, object]:
     """Extract authoritative failure details and counts from a JUnit report."""
     if not path.exists():
@@ -135,6 +149,7 @@ def collect_context() -> dict[str, object]:
         "changed_files": pull_request_info.changed_files if pull_request_info else [],
         "diff": pull_request_info.diff if pull_request_info else "",
         "test_results": junit,
+        "test_sources": _collect_test_sources(Path.cwd()),
         "coverage": coverage,
         "security_findings": security_findings,
         "pipeline_history": [json.loads(run.model_dump_json()) for run in history],

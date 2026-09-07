@@ -40,6 +40,7 @@ class AgentContext(BaseModel):
     changed_files: list[str] = Field(default_factory=list)
     diff: str = ""
     test_results: dict[str, Any] = Field(default_factory=dict)
+    test_sources: dict[str, str] = Field(default_factory=dict)
     coverage: dict[str, Any] = Field(default_factory=dict)
     security_findings: dict[str, Any] = Field(default_factory=dict)
     pipeline_history: list[dict[str, Any]] = Field(default_factory=list)

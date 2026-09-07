@@ -1,9 +1,9 @@
 """Test Quality Agent.
 
-Looks at what changed, the PR diff, existing test results, and coverage, and
-identifies branches/behavior that appear insufficiently tested. It can
-optionally generate *candidate* pytest tests, execute them, and report
-whether they passed -- it never merges or silently commits anything itself.
+Reviews test source semantically in addition to coverage. It looks for weak
+assertions, tests that do not exercise the intended behavior, missing mocks or
+isolation, and untested behavior. It can also generate candidate tests for
+known gaps; it never merges or silently commits anything itself.
 """
 
 from __future__ import annotations
@@ -55,6 +55,31 @@ class TestQualityAgent(BaseAgent):
 
     name = "test_quality_agent"
 
+    @staticmethod
+    def _render_quality_report(decision: AgentDecision) -> AgentDecision:
+        """Make the structured quality report visible in logs and PR comments."""
+        report = decision.arguments.get("quality_report")
+        if not isinstance(report, dict):
+            return decision
+        sections = [
+            f"Quality rating: {report.get('rating', 'Unknown')} "
+            f"({report.get('score', 'n/a')}/100)",
+            f"Assertions: {report.get('assertions', 'Not assessed')}",
+            f"Behavior coverage: {report.get('behavior_coverage', 'Not assessed')}",
+            f"Isolation/mocking: {report.get('isolation_mocking', 'Not assessed')}",
+            f"Reliability: {report.get('reliability', 'Not assessed')}",
+        ]
+        for key, label in (
+            ("weak_tests", "Weak tests"),
+            ("missing_behaviors", "Missing behaviors"),
+            ("recommendations", "Recommendations"),
+        ):
+            values = report.get(key, [])
+            if isinstance(values, list) and values:
+                sections.append(f"{label}:\n" + "\n".join(f"- {value}" for value in values))
+        decision.reason = decision.reason + "\n\n" + "\n".join(sections)
+        return decision
+
     def observe(self, context: AgentContext) -> dict[str, Any]:
         gaps = [
             (keyword, desc, code)
@@ -65,6 +90,7 @@ class TestQualityAgent(BaseAgent):
             "changed_files": context.changed_files,
             "coverage_before": context.coverage.get("before"),
             "coverage_after": context.coverage.get("after"),
+            "test_sources": context.test_sources,
             "gaps": gaps,
         }
 
@@ -73,7 +99,11 @@ class TestQualityAgent(BaseAgent):
         if not gaps:
             fallback = AgentDecision(
                 action="no_action",
-                reason="No known under-tested branches detected in this diff.",
+                reason=(
+                    "No known under-tested branches detected in this diff. "
+                    "Review the test-quality report for assertion strength, "
+                    "behavior coverage, mocking, and isolation findings."
+                ),
                 confidence=0.4,
                 requires_approval=False,
             )
@@ -81,15 +111,20 @@ class TestQualityAgent(BaseAgent):
             descriptions = ", ".join(desc for _, desc, _ in gaps)
             fallback = AgentDecision(
                 action="propose_tests",
-                reason=f"Detected potentially under-tested behavior: {descriptions}.",
+                reason=(
+                    f"Detected potentially under-tested behavior: {descriptions}. "
+                    "Review the test-quality report for assertion strength, "
+                    "behavior coverage, mocking, and isolation findings."
+                ),
                 tool="execute_tests",
                 arguments={"candidate_count": len(gaps)},
                 confidence=0.75,
                 requires_approval=True,
             )
-        return self.reason_with_llm(
+        decision = self.reason_with_llm(
             context, observation, fallback, "test_quality.md", ["execute_tests"]
         )
+        return self._render_quality_report(decision)
 
     def act(self, context: AgentContext, decision: AgentDecision) -> dict[str, Any]:
         if decision.tool != "execute_tests":
