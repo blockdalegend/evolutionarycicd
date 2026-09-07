@@ -59,6 +59,21 @@ def test_test_quality_observation_includes_test_source() -> None:
     assert observation["test_sources"] == context.test_sources
 
 
+def test_test_quality_report_includes_authoritative_pytest_results(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "agents.base.LLMClient.complete",
+        lambda _client, _request: LLMResponse(
+            success=False,
+            error="unavailable",
+        ),
+    )
+    context = AgentContext(test_results={"tests": 27, "failures_count": 0})
+
+    decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
+
+    assert "27 tests executed, 0 failure(s)" in decision.reason
+
+
 def test_test_quality_llm_receives_test_source(monkeypatch) -> None:
     captured = {}
 
@@ -89,6 +104,44 @@ def test_test_quality_llm_receives_test_source(monkeypatch) -> None:
     assert "tests/test_weak.py" in captured["content"]
     assert decision.arguments["quality_report"]["rating"] == "Poor"
     assert "Quality rating: Poor (15/100)" in decision.reason
+
+
+def test_test_quality_requests_report_when_decision_omits_it(monkeypatch) -> None:
+    responses = iter(
+        [
+            LLMResponse(
+                success=True,
+                parsed={
+                    "action": "no_action",
+                    "reason": "Tests are adequate.",
+                    "arguments": {},
+                    "confidence": 0.8,
+                    "requires_approval": False,
+                },
+            ),
+            LLMResponse(
+                success=True,
+                parsed={
+                    "rating": "Good",
+                    "score": 82,
+                    "assertions": "Assertions verify returned values and policy outcomes.",
+                    "behavior_coverage": "Core paths are covered; edge cases remain.",
+                    "isolation_mocking": "External GitHub and LLM calls are isolated.",
+                    "reliability": "Tests are deterministic.",
+                    "weak_tests": [],
+                    "missing_behaviors": ["Malformed context input"],
+                    "recommendations": ["Add malformed context coverage"],
+                },
+            ),
+        ]
+    )
+    monkeypatch.setattr("agents.base.LLMClient.complete", lambda *_args: next(responses))
+    context = AgentContext(test_results={"tests": 27, "failures_count": 0})
+
+    decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
+
+    assert decision.arguments["quality_report"]["score"] == 82
+    assert "Malformed context input" in decision.reason
 
 
 def test_llm_client_uses_defaults_for_empty_environment(monkeypatch) -> None:

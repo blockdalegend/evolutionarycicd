@@ -11,7 +11,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from agents.base import AgentContext, AgentDecision, BaseAgent
+from llm.client import LLMClient
+from llm.models import LLMMessage, LLMRequest
 from tools.testing.pytest_tools import run_pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -50,10 +54,63 @@ def test_validate_payment_rejects_gift_card_over_limit():
 }
 
 
+class TestQualityReport(BaseModel):
+    """Structured quality findings returned by the dedicated quality request."""
+
+    rating: str
+    score: int
+    assertions: str
+    behavior_coverage: str
+    isolation_mocking: str
+    reliability: str
+    weak_tests: list[str] = Field(default_factory=list)
+    missing_behaviors: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+
+
 class TestQualityAgent(BaseAgent):
     """Analyzes diff/coverage and proposes or validates missing tests."""
 
     name = "test_quality_agent"
+
+    @staticmethod
+    def _request_quality_report(
+        context: AgentContext, observation: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Request the detailed report when the primary decision omitted it."""
+        request = LLMRequest(
+            messages=[
+                LLMMessage(
+                    role="system",
+                    content=(
+                        "Return only a JSON object matching the supplied schema. "
+                        "Assess test quality from the authoritative pytest results, "
+                        "coverage, changed files, diff, and test sources. Do not invent "
+                        "test results or coverage."
+                    ),
+                ),
+                LLMMessage(
+                    role="user",
+                    content=(
+                        "Provide detailed quality findings for this repository data. "
+                        "Every field is required; use an empty list when there are no "
+                        "findings.\n\n"
+                        f"Agent context:\n{context.model_dump_json()}\n\n"
+                        f"Observation:\n{observation}"
+                    ),
+                ),
+            ],
+            response_schema=TestQualityReport.model_json_schema(),
+            temperature=0.1,
+            max_tokens=1200,
+        )
+        response = LLMClient().complete(request)
+        if not response.success or response.parsed is None:
+            return None
+        try:
+            return TestQualityReport.model_validate(response.parsed).model_dump()
+        except ValueError:
+            return None
 
     @staticmethod
     def _render_quality_report(decision: AgentDecision) -> AgentDecision:
@@ -88,6 +145,7 @@ class TestQualityAgent(BaseAgent):
         ]
         return {
             "changed_files": context.changed_files,
+            "test_results": context.test_results,
             "coverage_before": context.coverage.get("before"),
             "coverage_after": context.coverage.get("after"),
             "test_sources": context.test_sources,
@@ -124,7 +182,22 @@ class TestQualityAgent(BaseAgent):
         decision = self.reason_with_llm(
             context, observation, fallback, "test_quality.md", ["execute_tests"]
         )
-        return self._render_quality_report(decision)
+        if not isinstance(decision.arguments.get("quality_report"), dict):
+            quality_report = self._request_quality_report(context, observation)
+            if quality_report is not None:
+                decision.arguments["quality_report"] = quality_report
+        decision = self._render_quality_report(decision)
+        results = context.test_results
+        tests = results.get("tests") if isinstance(results, dict) else None
+        failures = results.get("failures_count", 0) if isinstance(results, dict) else 0
+        if isinstance(tests, int) and tests > 0:
+            decision.reason += (
+                f"\n\nAuthoritative pytest results: {tests} tests executed, "
+                f"{failures} failure(s)."
+            )
+        else:
+            decision.reason += "\n\nAuthoritative pytest results: unavailable."
+        return decision
 
     def act(self, context: AgentContext, decision: AgentDecision) -> dict[str, Any]:
         if decision.tool != "execute_tests":
