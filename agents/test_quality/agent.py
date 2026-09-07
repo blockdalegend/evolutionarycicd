@@ -143,16 +143,26 @@ class TestQualityAgent(BaseAgent):
     ) -> dict[str, Any]:
         """Keep model detail only when its cited location exists in the evidence."""
         validated = TestQualityAgent._validate_quality_report(report)
+        known_files = set(context.changed_files) | set(context.test_sources)
+        findings = validated.get("findings", [])
+        if (context.test_sources or observation.get("gaps")) and not findings:
+            raise ValueError(
+                "detailed findings are required when test sources or diff gaps are supplied"
+            )
         evidence = json.dumps(
             {"context": context.model_dump(), "observation": observation},
             default=str,
         )
-        for finding in validated.get("findings", []):
+        for finding in findings:
             location = finding["location"].strip()
             location_parts = [part.strip() for part in location.split("::") if part.strip()]
-            if not location_parts or not all(part in evidence for part in location_parts):
+            if (
+                not location_parts
+                or location_parts[0] not in known_files
+                or not all(part in evidence for part in location_parts)
+            ):
                 raise ValueError(
-                    f"finding location is not present in supplied evidence: {location}"
+                    f"finding location is not an exact supplied file/test: {location}"
                 )
         return validated
 
@@ -169,6 +179,8 @@ class TestQualityAgent(BaseAgent):
                     role="system",
                     content=(
                         "Return only a JSON object matching the supplied schema. "
+                        "The tool must be null or execute_tests; never select "
+                        "comment_pull_request or any other tool. "
                         "Assess test quality from the authoritative pytest results, "
                         "coverage, changed files, diff, and test sources. Do not invent "
                         "test results, coverage, identifiers, or behaviors. Every "
@@ -304,7 +316,9 @@ class TestQualityAgent(BaseAgent):
                 rendered_findings.append(
                     "- "
                     + finding["location"]
-                    + ": "
+                    + ": Current: "
+                    + finding["current_behavior"]
+                    + " Gap: "
                     + finding["gap"]
                     + " Why: "
                     + finding["why_it_matters"]

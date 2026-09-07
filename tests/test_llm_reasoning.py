@@ -94,6 +94,30 @@ def test_test_quality_llm_receives_test_source(monkeypatch) -> None:
                         "reliability": (
                             "The unconditional assertion can pass without executing behavior."
                         ),
+                        "findings": [
+                            {
+                                "location": "tests/test_weak.py",
+                                "current_behavior": (
+                                    "The test executes assert True without calling "
+                                    "application code."
+                                ),
+                                "gap": (
+                                    "It has no assertion tied to the behavior the "
+                                    "test claims to cover."
+                                ),
+                                "why_it_matters": (
+                                    "The test can pass even when the application "
+                                    "behavior is broken."
+                                ),
+                                "recommended_test": (
+                                    "Replace it in tests/test_weak.py with a test "
+                                    "of the returned outcome."
+                                ),
+                                "expected_assertion": (
+                                    "Assert the expected result for the exercised input."
+                                ),
+                            }
+                        ],
                         "weak_tests": ["test_weak"],
                     }
                 },
@@ -414,6 +438,41 @@ def test_test_quality_rejects_finding_outside_context(monkeypatch) -> None:
     decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
 
     assert decision.arguments["quality_report"].get("findings", []) == []
+
+
+def test_test_quality_rejects_generic_report_with_test_sources(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "agents.base.LLMClient.complete",
+        lambda *_args: LLMResponse(
+            success=True,
+            parsed={
+                "action": "report_test_quality",
+                "reason": "The tests are generally good.",
+                "arguments": {
+                    "quality_report": {
+                        "rating": "Good",
+                        "score": 85,
+                        "assertions": "The tests assert behavior in several important paths.",
+                        "behavior_coverage": "The suite covers core behavior but may miss edges.",
+                        "isolation_mocking": "The supplied tests use deterministic local inputs.",
+                        "reliability": "The suite is reliable based on the supplied results.",
+                        "findings": [],
+                        "weak_tests": [],
+                        "missing_behaviors": [],
+                        "recommendations": ["Add more test cases for different scenarios."],
+                    }
+                },
+                "confidence": 0.8,
+                "requires_approval": False,
+            },
+        ),
+    )
+    context = AgentContext(test_sources={"tests/test_payment.py": "def test_charge(): assert True"})
+
+    decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
+
+    assert decision.arguments["quality_report"]["rating"] == "Needs improvement"
+    assert "tests/test_payment.py" in decision.arguments["quality_report"]["weak_tests"][0]
 
 
 def test_llm_client_uses_defaults_for_empty_environment(monkeypatch) -> None:

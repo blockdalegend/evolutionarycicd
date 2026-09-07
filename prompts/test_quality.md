@@ -18,6 +18,8 @@ pipeline for the `evolutionary-cicd` demo repository.
 - The only executable tool name available to this agent is `execute_tests`.
   Never select `pytest`, `run_pytest`, or any other tool name; select no tool
   when candidate execution is not warranted.
+- The decision `tool` must be either `null` or `execute_tests`. Never select
+  `comment_pull_request`; the orchestrator publishes the final report itself.
 - Respect the policy system: `modify_code`, `push_branch`, and
   `create_pull_request` all require human approval per
   `policies/approval_rules.yml`. You may propose a diff; you may not merge
