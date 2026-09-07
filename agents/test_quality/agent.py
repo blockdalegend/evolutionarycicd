@@ -109,8 +109,14 @@ class TestQualityAgent(BaseAgent):
                         "Return only a JSON object matching the supplied schema. "
                         "Assess test quality from the authoritative pytest results, "
                         "coverage, changed files, diff, and test sources. Do not invent "
-                        "test results or coverage. Keep each narrative field under "
-                        "40 words and each list to at most 5 concise items."
+                        "test results, coverage, identifiers, or behaviors. Every "
+                        "finding must cite an exact test, file, branch, or behavior "
+                        "from the supplied context. Do not give generic advice. "
+                        "Treat passing pytest as execution evidence, not proof of "
+                        "completeness. Score 0 only when tests provide no meaningful "
+                        "evidence; use 50-74 for meaningful tests with important gaps. "
+                        "Keep each narrative field under 60 words and each list to "
+                        "at most 3 high-signal items."
                     ),
                 ),
                 LLMMessage(
