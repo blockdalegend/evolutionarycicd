@@ -218,11 +218,21 @@ def test_test_quality_normalizes_provider_report_field_names(monkeypatch) -> Non
 def test_llm_client_uses_defaults_for_empty_environment(monkeypatch) -> None:
     monkeypatch.setenv("LLM_BASE_URL", "")
     monkeypatch.setenv("LLM_MODEL", "")
+    monkeypatch.delenv("LLM_TIMEOUT_SECONDS", raising=False)
 
     client = LLMClient()
 
     assert client.base_url == "https://api.openai.com/v1"
     assert client.model == "gpt-4o-mini"
+    assert client.timeout == 30.0
+
+
+def test_llm_client_uses_configured_timeout(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "300")
+
+    client = LLMClient()
+
+    assert client.timeout == 300.0
 
 
 def test_llm_client_uses_azure_api_key_auth(monkeypatch) -> None:

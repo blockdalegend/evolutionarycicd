@@ -39,7 +39,7 @@ jobs:
             curl -fsS http://127.0.0.1:11434/api/tags && break
             sleep 1
           done
-          ollama pull qwen2.5-coder:7b
+          ollama pull qwen2.5-coder:3b
 
       - name: Fetch PR branch and attempt merge (to surface conflicts)
         run: |
@@ -56,8 +56,9 @@ jobs:
           AGENT_LOG_LEVEL: INFO
           LLM_API_KEY: ollama
           LLM_BASE_URL: http://127.0.0.1:11434/v1
-          LLM_MODEL: qwen2.5-coder:7b
+          LLM_MODEL: qwen2.5-coder:3b
           LLM_AUTH_MODE: bearer
+          LLM_TIMEOUT_SECONDS: "300"
         run: python scripts/run_agent.py --agent merge_conflict
 
       - name: Abort in-progress merge (never auto-commit)

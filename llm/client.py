@@ -42,7 +42,7 @@ class LLMClient:
         base_url: str | None = None,
         model: str | None = None,
         auth_mode: str | None = None,
-        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        timeout: float | None = None,
         max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
         self.api_key = api_key if api_key is not None else os.environ.get("LLM_API_KEY", "")
@@ -57,7 +57,10 @@ class LLMClient:
             if auth_mode is not None
             else os.environ.get("LLM_AUTH_MODE", "bearer")
         )
-        self.timeout = timeout
+        configured_timeout = os.environ.get("LLM_TIMEOUT_SECONDS")
+        self.timeout = timeout if timeout is not None else float(
+            configured_timeout or DEFAULT_TIMEOUT_SECONDS
+        )
         self.max_retries = max_retries
 
     def is_configured(self) -> bool:
