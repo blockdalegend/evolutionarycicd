@@ -40,6 +40,15 @@ Summarize:
 - Which findings are most urgent and why.
 - What the recommended remediation is (e.g. pin the exact version, replace a
   mutable tag with a full commit SHA, upgrade a vulnerable package).
+- Include concrete evidence in the observation: tool name, finding ID or
+  package/action, severity when supplied, affected file or location when
+  supplied, and the scanner status. Never summarize multiple findings as only
+  "multiple issues".
+- Do not invent severity, CVE, location, package version, or remediation URL.
+  Use `not supplied` when deterministic output does not contain that field.
+- Keep the observation concise but enumerate every finding. Recommendations
+  must map to the specific finding or explicitly state that no remediation is
+  needed.
 
 ## Output format
 
