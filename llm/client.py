@@ -52,7 +52,11 @@ class LLMClient:
             else os.environ.get("LLM_BASE_URL") or "https://api.openai.com/v1"
         ).rstrip("/")
         self.model = model if model is not None else os.environ.get("LLM_MODEL") or "gpt-4o-mini"
-        self.auth_mode = auth_mode if auth_mode is not None else os.environ.get("LLM_AUTH_MODE", "bearer")
+        self.auth_mode = (
+            auth_mode
+            if auth_mode is not None
+            else os.environ.get("LLM_AUTH_MODE", "bearer")
+        )
         self.timeout = timeout
         self.max_retries = max_retries
 

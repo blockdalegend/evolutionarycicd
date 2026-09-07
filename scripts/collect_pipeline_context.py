@@ -8,17 +8,16 @@ outside of GitHub Actions (e.g. locally), so the demo always works.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import os  # noqa: E402
-
 from agents.orchestrator.orchestrator import load_github_event_context  # noqa: E402
-from tools.github.client import GitHubClient  # noqa: E402
 from telemetry.store import load_pipeline_history  # noqa: E402
+from tools.github.client import GitHubClient  # noqa: E402
 
 
 def _read_json(path: Path) -> object:
@@ -122,7 +121,9 @@ def collect_context() -> dict[str, object]:
 
     return {
         "repository": os.environ.get("GITHUB_REPOSITORY", ""),
-        "pull_request_number": pull_request_info.number if pull_request_info else pull_request_number,
+        "pull_request_number": (
+            pull_request_info.number if pull_request_info else pull_request_number
+        ),
         "commit_sha": (
             pull_request.get("head", {}).get("sha")
             if isinstance(pull_request.get("head"), dict)
