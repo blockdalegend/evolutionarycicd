@@ -27,6 +27,17 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Start local Ollama model
+        run: |
+          curl -fsSL -o /tmp/ollama-install.sh https://ollama.com/install.sh
+          sh /tmp/ollama-install.sh
+          ollama serve > /tmp/ollama.log 2>&1 &
+          for attempt in {1..30}; do
+            curl -fsS http://127.0.0.1:11434/api/tags && break
+            sleep 1
+          done
+          ollama pull qwen2.5-coder:7b
+
       - name: Download CI test report
         uses: actions/download-artifact@v4
         with:
@@ -51,8 +62,8 @@ jobs:
           GITHUB_EVENT_PATH: ${{ github.event_path }}
           AGENT_DRY_RUN: ${{ vars.AGENT_DRY_RUN || 'true' }}
           AGENT_LOG_LEVEL: INFO
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
-          LLM_MODEL: ${{ vars.LLM_MODEL }}
-          LLM_AUTH_MODE: ${{ vars.LLM_AUTH_MODE || 'bearer' }}
+          LLM_API_KEY: ollama
+          LLM_BASE_URL: http://127.0.0.1:11434/v1
+          LLM_MODEL: qwen2.5-coder:7b
+          LLM_AUTH_MODE: bearer
         run: python scripts/run_agent.py --agent failure_analysis --context-file /tmp/context.json
