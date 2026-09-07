@@ -15,10 +15,10 @@ pipeline for the `evolutionary-cicd` demo repository.
   call actually succeeded.
 - Prefer a recommendation over an automatic action whenever your confidence
   is low.
-- The only executable tool name available to this agent is `execute_tests`.
-  Never select `pytest`, `run_pytest`, or any other tool name; select no tool
-  when candidate execution is not warranted.
-- The decision `tool` must be either `null` or `execute_tests`. Never select
+- The executable tool name available for candidate validation is `execute_tests`.
+  Never select `pytest`, `run_pytest`, or any other test command.
+- You may select `create_pull_request` only when `proposed_changes` contains
+  complete, evidence-backed Python test-file contents. Never select
   `comment_pull_request`; the orchestrator publishes the final report itself.
 - Respect the policy system: `modify_code`, `push_branch`, and
   `create_pull_request` all require human approval per
@@ -120,6 +120,11 @@ and consistent with the rating),
 `assertions`, `behavior_coverage`, `isolation_mocking`, `reliability`,
 `findings` (list of detailed evidence-backed finding objects),
 `weak_tests` (list), `missing_behaviors` (list), and `recommendations` (list).
+When proposing a fix, also populate `proposed_changes` with up to three complete
+Python files under `tests/`. Each change must include `path`, `content`,
+`rationale`, and `finding_locations`. Select `create_pull_request` only when
+those files are complete and directly address the findings; otherwise select
+`execute_tests` or no tool.
 For this agent, always include `quality_report` in `arguments` when the
 context contains test sources or pytest results.
 Each narrative field must be a substantive sentence of at least 20 characters;

@@ -9,6 +9,8 @@ known gaps; it never merges or silently commits anything itself.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
@@ -57,6 +59,15 @@ def test_validate_payment_rejects_gift_card_over_limit():
 }
 
 
+class TestQualityChange(BaseModel):
+    """One complete test-file change proposed by the quality model."""
+
+    path: str = Field(pattern=r"^tests/[A-Za-z0-9_./-]+\.py$")
+    content: str = Field(min_length=40)
+    rationale: str = Field(min_length=20)
+    finding_locations: list[str] = Field(min_length=1, max_length=3)
+
+
 class TestQualityReport(BaseModel):
     """Structured quality findings returned by the dedicated quality request."""
 
@@ -70,6 +81,7 @@ class TestQualityReport(BaseModel):
     weak_tests: list[str] = Field(default_factory=list, max_length=5)
     missing_behaviors: list[str] = Field(default_factory=list, max_length=5)
     recommendations: list[str] = Field(default_factory=list, max_length=5)
+    proposed_changes: list[TestQualityChange] = Field(default_factory=list, max_length=3)
 
 
 class TestQualityFinding(BaseModel):
@@ -136,6 +148,14 @@ class TestQualityAgent(BaseAgent):
             value = getattr(report, field).strip()
             if value.isdigit() or value.lower() in {"testing", "unknown", "n/a"}:
                 raise ValueError(f"{field} is not a substantive assessment")
+        for change in report.proposed_changes:
+            change_path = Path(change.path)
+            if change_path.is_absolute() or ".." in change_path.parts:
+                raise ValueError(f"proposed change escapes the tests directory: {change.path}")
+            if "```" in change.content:
+                raise ValueError(f"proposed change contains a markdown fence: {change.path}")
+            if not change.content.lstrip().startswith(("from ", "import ", '"""', "#")):
+                raise ValueError(f"proposed change is not a Python source file: {change.path}")
         return report.model_dump()
 
     @staticmethod
@@ -160,6 +180,12 @@ class TestQualityAgent(BaseAgent):
             {"context": context.model_dump(), "observation": observation},
             default=str,
         )
+        for change in validated.get("proposed_changes", []):
+            for location in change["finding_locations"]:
+                if location not in evidence:
+                    raise ValueError(
+                        f"proposed change location is not in supplied evidence: {location}"
+                    )
         for finding in findings:
             location = finding["location"].strip()
             location_parts = [part.strip() for part in location.split("::") if part.strip()]
@@ -222,7 +248,9 @@ class TestQualityAgent(BaseAgent):
                         "The recommended_test must repeat the cited file path and name a "
                         "specific test function to add or change. Never write 'add more tests', "
                         "'cover edge cases', or 'improve organization' without naming the file, "
-                        "function, input, expected result, and assertion."
+                        "function, input, expected result, and assertion. If you recommend a "
+                        "fix, include it in proposed_changes as complete Python test-file "
+                        "content and link it to the finding location."
                     ),
                 ),
                 LLMMessage(
@@ -238,7 +266,7 @@ class TestQualityAgent(BaseAgent):
             ],
             response_schema=TestQualityReport.model_json_schema(),
             temperature=0.1,
-            max_tokens=4000,
+            max_tokens=6000,
         )
         response = LLMClient().complete(request)
         parsed = response.parsed
@@ -480,7 +508,7 @@ class TestQualityAgent(BaseAgent):
             observation,
             fallback,
             "test_quality.md",
-            ["execute_tests"],
+            ["execute_tests", "create_pull_request"],
             preserve_argument_keys=("quality_report",),
         )
         quality_report = decision.arguments.get("quality_report")
@@ -512,6 +540,11 @@ class TestQualityAgent(BaseAgent):
                     if report is not None
                     else self._fallback_quality_report(context, observation)
                 )
+        proposed_changes = decision.arguments["quality_report"].get("proposed_changes", [])
+        if proposed_changes:
+            decision.action = "propose_fix_pull_request"
+            decision.tool = "create_pull_request"
+            decision.requires_approval = True
         decision = self._render_quality_report(decision)
         results = context.test_results
         tests = results.get("tests") if isinstance(results, dict) else None
@@ -526,6 +559,10 @@ class TestQualityAgent(BaseAgent):
         return decision
 
     def act(self, context: AgentContext, decision: AgentDecision) -> dict[str, Any]:
+        report = decision.arguments.get("quality_report", {})
+        proposed_changes = report.get("proposed_changes", []) if isinstance(report, dict) else []
+        if decision.tool == "create_pull_request" and proposed_changes:
+            return self._create_fix_pull_request(context, decision, proposed_changes)
         if decision.tool != "execute_tests":
             return {}
         gaps = [
@@ -549,11 +586,73 @@ class TestQualityAgent(BaseAgent):
             "all_passed": run_result.all_passed,
         }
 
+    def _create_fix_pull_request(
+        self,
+        context: AgentContext,
+        decision: AgentDecision,
+        proposed_changes: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Apply model-authored test changes and open a reviewable pull request."""
+        from tools.github.client import GitHubClient
+
+        client = GitHubClient()
+        files = {change["path"]: change["content"] for change in proposed_changes}
+        if os.environ.get("AGENT_ALLOW_FIX_PR", "false").lower() not in {"1", "true", "yes"}:
+            logger.info(
+                "Test Quality proposed fixes require AGENT_ALLOW_FIX_PR=true; keeping PR in "
+                "dry-run mode"
+            )
+            return {
+                "created": False,
+                "dry_run": True,
+                "approval_required": True,
+                "files": sorted(files),
+            }
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT) as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            candidate_paths = []
+            for path, content in files.items():
+                candidate_path = temporary_root / Path(path)
+                candidate_path.parent.mkdir(parents=True, exist_ok=True)
+                candidate_path.write_text(content, encoding="utf-8")
+                candidate_paths.append(str(candidate_path))
+            run_result = run_pytest(candidate_paths, REPO_ROOT)
+        if not run_result.all_passed:
+            return {
+                "created": False,
+                "error": "proposed tests did not pass",
+                "passed": run_result.passed,
+                "failed": run_result.failed,
+            }
+        if client.dry_run:
+            logger.info(
+                "[dry-run] would create Test Quality fix PR",
+                extra={"extra_fields": {"files": [change["path"] for change in proposed_changes]}},
+            )
+            return {"dry_run": True, "files": [change["path"] for change in proposed_changes]}
+
+        if not context.repository:
+            return {"created": False, "error": "repository is required to create a PR"}
+        branch = f"agent/test-quality-{context.commit_sha or 'fix'}"[:60]
+        result = client.create_pull_request_with_files(
+            branch_name=branch,
+            base_branch="main",
+            title="Test Quality Agent: add missing coverage",
+            body=decision.reason,
+            files=files,
+            repository=context.repository,
+        )
+        return result
+
     def validate(
         self, context: AgentContext, decision: AgentDecision, tool_result: dict[str, Any]
     ) -> dict[str, Any]:
         if decision.tool != "execute_tests":
-            return {"skipped": True}
+            return {
+                "skipped": decision.tool != "create_pull_request",
+                "pull_request_created": tool_result.get("created", False),
+                "pull_request_url": tool_result.get("url"),
+            }
         return {
             "generated_tests_passed": tool_result.get("all_passed", False),
             "passed": tool_result.get("passed", 0),

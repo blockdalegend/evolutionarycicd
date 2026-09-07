@@ -89,6 +89,7 @@ def test_test_quality_preserves_report_when_model_selects_publication_tool(monke
         "weak_tests": [],
         "missing_behaviors": [],
         "recommendations": [],
+        "proposed_changes": [],
     }
     monkeypatch.setattr(
         "agents.base.LLMClient.complete",
@@ -110,6 +111,86 @@ def test_test_quality_preserves_report_when_model_selects_publication_tool(monke
 
     assert decision.tool is None
     assert decision.arguments["quality_report"] == report
+
+
+def test_test_quality_selects_pr_for_validated_proposed_changes(monkeypatch) -> None:
+    report = {
+        "rating": "Needs improvement",
+        "score": 65,
+        "assertions": "The supplied tests miss a meaningful boundary assertion.",
+        "behavior_coverage": "The supplied tests miss one visible error branch.",
+        "isolation_mocking": "The supplied tests use local deterministic dependencies.",
+        "reliability": "The supplied test execution is deterministic and successful.",
+        "findings": [
+            {
+                "category": "assertions",
+                "location": "tests/test_quality.py::test_source",
+                "current_behavior": "The test executes the source without checking its result.",
+                "gap": "The expected result is not asserted for the supplied input.",
+                "why_it_matters": "A regression can pass while the test remains green.",
+                "recommended_test": (
+                    "Update tests/test_quality.py::test_source with a result assertion."
+                ),
+                "expected_assertion": "Assert the returned result matches the expected value.",
+            },
+            {
+                "category": "behavior_coverage",
+                "location": "tests/test_quality.py::test_source",
+                "current_behavior": "The test covers only the primary source path.",
+                "gap": "The visible boundary branch is not exercised.",
+                "why_it_matters": "The boundary behavior can regress without detection.",
+                "recommended_test": "Add test_boundary to tests/test_quality.py for the branch.",
+                "expected_assertion": "Assert the documented boundary result.",
+            },
+            {
+                "category": "isolation_mocking",
+                "location": "tests/test_quality.py::test_source",
+                "current_behavior": "The supplied test uses a local dependency directly.",
+                "gap": "The dependency interaction is not isolated in the test.",
+                "why_it_matters": "Uncontrolled dependencies can make the test unreliable.",
+                "recommended_test": "Add a controlled fixture in tests/test_quality.py.",
+                "expected_assertion": "Assert the result produced by the controlled fixture.",
+            },
+        ],
+        "weak_tests": ["tests/test_quality.py::test_source lacks a result assertion."],
+        "missing_behaviors": ["tests/test_quality.py::test_source boundary branch"],
+        "recommendations": ["Update tests/test_quality.py with a boundary test."],
+        "proposed_changes": [
+            {
+                "path": "tests/test_quality_fix.py",
+                "content": (
+                    "from app.models import PaymentMethod\n\n\n"
+                    "def test_boundary():\n    assert PaymentMethod is not None\n"
+                ),
+                "rationale": "Adds a concrete test file for the cited boundary finding.",
+                "finding_locations": ["tests/test_quality.py::test_source"],
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        "agents.base.LLMClient.complete",
+        lambda *_args: LLMResponse(
+            success=True,
+            parsed={
+                "action": "propose_fix_pull_request",
+                "reason": "The supplied evidence supports a focused test fix.",
+                "tool": "create_pull_request",
+                "arguments": {"quality_report": report},
+                "confidence": 0.85,
+                "requires_approval": True,
+            },
+        ),
+    )
+    context = AgentContext(
+        test_sources={"tests/test_quality.py": "def test_source(): assert True"},
+        diff="tests/test_quality.py::test_source",
+    )
+
+    decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
+
+    assert decision.action == "propose_fix_pull_request"
+    assert decision.tool == "create_pull_request"
+    assert decision.requires_approval is True
 
 
 def test_test_quality_llm_receives_test_source(monkeypatch) -> None:
