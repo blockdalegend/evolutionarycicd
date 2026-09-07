@@ -27,8 +27,17 @@ jobs:
 
       - name: Start local Ollama model
         run: |
-          curl -fsSL -o /tmp/ollama-install.sh https://ollama.com/install.sh
-          sh /tmp/ollama-install.sh
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 5 \
+            -o /tmp/ollama-install.sh https://ollama.com/install.sh
+          for attempt in {1..5}; do
+            if sh /tmp/ollama-install.sh; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              exit 1
+            fi
+            sleep 5
+          done
           ollama serve > /tmp/ollama.log 2>&1 &
           for attempt in {1..30}; do
             curl -fsS http://127.0.0.1:11434/api/tags && break
