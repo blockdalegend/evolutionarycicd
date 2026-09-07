@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -98,6 +99,26 @@ def _parse_coverage(path: Path) -> dict[str, object]:
     return {"after": round(float(line_rate) * 100, 2)}
 
 
+def _collect_local_git_diff() -> tuple[list[str], str]:
+    """Use the current branch diff as PR evidence for local agent runs."""
+    commands = [
+        ["git", "diff", "--name-only", "main...HEAD"],
+        ["git", "diff", "main...HEAD"],
+    ]
+    outputs: list[str] = []
+    for command in commands:
+        result = subprocess.run(  # nosec B603 B607 - fixed read-only git commands
+            command,
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        outputs.append(result.stdout)
+    changed_files = [line for line in outputs[0].splitlines() if line.strip()]
+    return changed_files, outputs[1]
+
+
 def _pull_request_number(event: dict[str, object]) -> int | None:
     """Find a PR number in pull_request and workflow_run event payloads."""
     pull_request = event.get("pull_request")
@@ -145,6 +166,9 @@ def collect_context() -> dict[str, object]:
         ),
     }
     history = load_pipeline_history()
+    local_changed_files, local_diff = _collect_local_git_diff()
+    changed_files = pull_request_info.changed_files if pull_request_info else local_changed_files
+    diff = pull_request_info.diff if pull_request_info else local_diff
 
     return {
         "repository": os.environ.get("GITHUB_REPOSITORY", ""),
@@ -156,8 +180,8 @@ def collect_context() -> dict[str, object]:
             if isinstance(pull_request.get("head"), dict)
             else workflow_run.get("head_sha", os.environ.get("GITHUB_SHA", ""))
         ),
-        "changed_files": pull_request_info.changed_files if pull_request_info else [],
-        "diff": pull_request_info.diff if pull_request_info else "",
+        "changed_files": changed_files,
+        "diff": diff,
         "test_results": junit,
         "test_sources": _collect_test_sources(Path.cwd()),
         "coverage": coverage,
