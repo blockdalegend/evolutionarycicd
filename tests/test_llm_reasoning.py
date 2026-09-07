@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import pytest
@@ -74,6 +75,41 @@ def test_test_quality_report_includes_authoritative_pytest_results(monkeypatch) 
     decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
 
     assert "27 tests executed, 0 failure(s)" in decision.reason
+
+
+def test_test_quality_preserves_report_when_model_selects_publication_tool(monkeypatch) -> None:
+    report = {
+        "rating": "Good",
+        "score": 80,
+        "assertions": "The supplied tests assert meaningful returned behavior.",
+        "behavior_coverage": "The supplied tests cover the primary behavior paths.",
+        "isolation_mocking": "The supplied tests use deterministic local dependencies.",
+        "reliability": "The supplied test execution is deterministic and successful.",
+        "findings": [],
+        "weak_tests": [],
+        "missing_behaviors": [],
+        "recommendations": [],
+    }
+    monkeypatch.setattr(
+        "agents.base.LLMClient.complete",
+        lambda *_args: LLMResponse(
+            success=True,
+            parsed={
+                "action": "report_test_quality",
+                "reason": "The report is ready for publication.",
+                "tool": "comment_pull_request",
+                "arguments": {"quality_report": report},
+                "confidence": 0.9,
+                "requires_approval": False,
+            },
+        ),
+    )
+    context = AgentContext(test_results={"tests": 4, "failures_count": 0})
+
+    decision = TestQualityAgent().reason(context, TestQualityAgent().observe(context))
+
+    assert decision.tool is None
+    assert decision.arguments["quality_report"] == report
 
 
 def test_test_quality_llm_receives_test_source(monkeypatch) -> None:

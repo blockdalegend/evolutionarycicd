@@ -79,6 +79,7 @@ class BaseAgent(ABC):
         fallback: AgentDecision,
         prompt_name: str,
         allowed_tools: list[str],
+        preserve_argument_keys: tuple[str, ...] = (),
     ) -> AgentDecision:
         """Use structured LLM reasoning, falling back to deterministic logic."""
         prompt_path = PROMPTS_DIR / prompt_name
@@ -114,6 +115,18 @@ class BaseAgent(ABC):
                 parsed["requires_approval"] = parsed.pop("human_approval")
             decision = AgentDecision.model_validate(parsed)
             if decision.tool not in allowed_tools and decision.tool is not None:
+                preserved_arguments = dict(fallback.arguments)
+                for key in preserve_argument_keys:
+                    value = decision.arguments.get(key)
+                    if value is not None:
+                        preserved_arguments[key] = value
+                if preserved_arguments != fallback.arguments:
+                    logger.info(
+                        "LLM selected a publication tool; normalized to the agent fallback "
+                        "while preserving report arguments",
+                        extra={"extra_fields": {"agent": self.name, "tool": decision.tool}},
+                    )
+                    return fallback.model_copy(update={"arguments": preserved_arguments})
                 logger.warning(
                     "LLM selected a tool outside the agent allowlist; using fallback",
                     extra={"extra_fields": {"agent": self.name, "tool": decision.tool}},

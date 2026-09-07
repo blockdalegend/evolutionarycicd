@@ -476,7 +476,12 @@ class TestQualityAgent(BaseAgent):
                 requires_approval=True,
             )
         decision = self.reason_with_llm(
-            context, observation, fallback, "test_quality.md", ["execute_tests"]
+            context,
+            observation,
+            fallback,
+            "test_quality.md",
+            ["execute_tests"],
+            preserve_argument_keys=("quality_report",),
         )
         quality_report = decision.arguments.get("quality_report")
         try:
