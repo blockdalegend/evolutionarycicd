@@ -122,6 +122,7 @@ def collect_context() -> dict[str, object]:
     coverage = _parse_coverage(_find_artifact("coverage.xml"))
     bandit = _read_json(_find_artifact("bandit.json"))
     pip_audit = _read_json(_find_artifact("pip-audit.json"))
+    zizmor = _read_json(_find_artifact("zizmor.json"))
     security_findings = {
         "bandit": bandit.get("results", []) if isinstance(bandit, dict) else [],
         "pip_audit": (
@@ -132,6 +133,10 @@ def collect_context() -> dict[str, object]:
             ]
             if isinstance(pip_audit, dict)
             else pip_audit
+        ),
+        "github_actions": zizmor if isinstance(zizmor, list) else [],
+        "github_actions_scan_status": (
+            "completed" if isinstance(zizmor, list) else "unavailable"
         ),
     }
     history = load_pipeline_history()

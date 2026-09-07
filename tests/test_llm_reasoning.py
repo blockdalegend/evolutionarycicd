@@ -5,6 +5,7 @@ from agents.failure_analysis.agent import FailureAnalysisAgent
 from agents.test_quality.agent import TestQualityAgent
 from llm.client import LLMClient
 from llm.models import LLMResponse
+from tools.security.scanners import run_zizmor
 
 
 def test_agent_uses_structured_llm_decision(monkeypatch) -> None:
@@ -104,3 +105,27 @@ def test_llm_client_uses_azure_api_key_auth(monkeypatch) -> None:
     client = LLMClient(api_key="test-key", auth_mode="api-key")
 
     assert client._auth_headers() == {"api-key": "test-key"}
+
+
+def test_zizmor_parses_action_security_findings(monkeypatch, tmp_path) -> None:
+    class _Completed:
+        stdout = '[{"ident": "dangerous-triggers", "determinations": {"severity": "High"}}]'
+
+    monkeypatch.setattr("tools.security.scanners.which", lambda _name: "/usr/local/bin/zizmor")
+    monkeypatch.setattr(
+        "tools.security.scanners.subprocess.run", lambda *args, **kwargs: _Completed()
+    )
+
+    result = run_zizmor(tmp_path)
+
+    assert result.ran_successfully is True
+    assert result.findings[0]["ident"] == "dangerous-triggers"
+
+
+def test_zizmor_reports_when_unavailable(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("tools.security.scanners.which", lambda _name: None)
+
+    result = run_zizmor(tmp_path)
+
+    assert result.ran_successfully is False
+    assert result.findings == []

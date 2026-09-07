@@ -33,6 +33,10 @@ jobs:
         run: pip-audit -r requirements.txt -f json -o /tmp/pip-audit.json
         continue-on-error: true
 
+      - name: Zizmor (GitHub Actions security)
+        run: zizmor --format json .github/workflows > /tmp/zizmor.json
+        continue-on-error: true
+
       - name: Collect PR context
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

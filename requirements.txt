@@ -21,3 +21,4 @@ mypy==1.11.2
 # Security
 bandit==1.7.10
 pip-audit==2.7.3
+zizmor==1.30.0
