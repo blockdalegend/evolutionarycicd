@@ -42,19 +42,23 @@ class SupplyChainAgent(BaseAgent):
             issues.append(f"{len(observation['pip_audit_findings'])} known-vulnerable package(s)")
 
         if not issues:
-            return AgentDecision(
+            fallback = AgentDecision(
                 action="no_action",
                 reason="No supply-chain issues detected by deterministic scanners.",
                 confidence=0.6,
                 requires_approval=False,
             )
-        return AgentDecision(
-            action="report_supply_chain_findings",
-            reason="Supply-chain scan found: " + "; ".join(issues) + ".",
-            tool="comment_pull_request",
-            arguments={"issue_count": len(issues)},
-            confidence=0.8,
-            requires_approval=False,
+        else:
+            fallback = AgentDecision(
+                action="report_supply_chain_findings",
+                reason="Supply-chain scan found: " + "; ".join(issues) + ".",
+                tool="comment_pull_request",
+                arguments={"issue_count": len(issues)},
+                confidence=0.8,
+                requires_approval=False,
+            )
+        return self.reason_with_llm(
+            context, observation, fallback, "supply_chain.md", ["comment_pull_request"]
         )
 
     def act(self, context: AgentContext, decision: AgentDecision) -> dict[str, Any]:

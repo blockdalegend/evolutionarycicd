@@ -42,33 +42,40 @@ class PipelineOptimizerAgent(BaseAgent):
     def reason(self, context: AgentContext, observation: dict[str, Any]) -> AgentDecision:
         runs = observation.get("runs", [])
         if not runs:
-            return AgentDecision(
+            fallback = AgentDecision(
                 action="no_action",
                 reason="No pipeline history available to analyze.",
                 confidence=0.2,
                 requires_approval=False,
             )
-
-        recommendations = self._analyze(runs)
-        if not recommendations:
-            return AgentDecision(
-                action="no_action",
-                reason=f"Analyzed {len(runs)} historical runs; no systemic issues found.",
-                confidence=0.5,
-                requires_approval=False,
-            )
-
-        return AgentDecision(
-            action="recommend_pipeline_improvements",
-            reason=(
-                f"Analyzed {len(runs)} historical runs and identified "
-                f"{len(recommendations)} recommendation(s):\n"
-                + "\n".join(f"- {rec}" for rec in recommendations)
-            ),
-            tool="propose_workflow_change",
-            arguments={"recommendations": recommendations},
-            confidence=0.65,
-            requires_approval=True,
+        else:
+            recommendations = self._analyze(runs)
+            if not recommendations:
+                fallback = AgentDecision(
+                    action="no_action",
+                    reason=f"Analyzed {len(runs)} historical runs; no systemic issues found.",
+                    confidence=0.5,
+                    requires_approval=False,
+                )
+            else:
+                fallback = AgentDecision(
+                    action="recommend_pipeline_improvements",
+                    reason=(
+                        f"Analyzed {len(runs)} historical runs and identified "
+                        f"{len(recommendations)} recommendation(s):\n"
+                        + "\n".join(f"- {rec}" for rec in recommendations)
+                    ),
+                    tool="propose_workflow_change",
+                    arguments={"recommendations": recommendations},
+                    confidence=0.65,
+                    requires_approval=True,
+                )
+        return self.reason_with_llm(
+            context,
+            observation,
+            fallback,
+            "pipeline_optimizer.md",
+            ["propose_workflow_change"],
         )
 
     def act(self, context: AgentContext, decision: AgentDecision) -> dict[str, Any]:

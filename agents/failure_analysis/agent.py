@@ -29,27 +29,33 @@ class FailureAnalysisAgent(BaseAgent):
     def reason(self, context: AgentContext, observation: dict[str, Any]) -> AgentDecision:
         failures = observation.get("failures", [])
         if not failures:
-            return AgentDecision(
+            fallback = AgentDecision(
                 action="no_action",
                 reason="No failing tests reported; nothing to analyze.",
                 confidence=0.3,
                 requires_approval=False,
             )
-        likely_files = [
-            f for f in observation.get("changed_files", []) if any(f in fail for fail in failures)
-        ]
-        suspects = likely_files or observation.get("changed_files", [])[:3]
-        confidence = 0.7 if likely_files else 0.4
-        return AgentDecision(
-            action="report_failure_analysis",
-            reason=(
-                f"{len(failures)} test(s) failed. Files most likely related: "
-                f"{', '.join(suspects) or 'unknown'}."
-            ),
-            tool="comment_pull_request",
-            arguments={"suspects": suspects},
-            confidence=confidence,
-            requires_approval=False,
+        else:
+            likely_files = [
+                f
+                for f in observation.get("changed_files", [])
+                if any(f in fail for fail in failures)
+            ]
+            suspects = likely_files or observation.get("changed_files", [])[:3]
+            confidence = 0.7 if likely_files else 0.4
+            fallback = AgentDecision(
+                action="report_failure_analysis",
+                reason=(
+                    f"{len(failures)} test(s) failed. Files most likely related: "
+                    f"{', '.join(suspects) or 'unknown'}."
+                ),
+                tool="comment_pull_request",
+                arguments={"suspects": suspects},
+                confidence=confidence,
+                requires_approval=False,
+            )
+        return self.reason_with_llm(
+            context, observation, fallback, "failure_analysis.md", ["comment_pull_request"]
         )
 
     def act(self, context: AgentContext, decision: AgentDecision) -> dict[str, Any]:

@@ -71,20 +71,24 @@ class TestQualityAgent(BaseAgent):
     def reason(self, context: AgentContext, observation: dict[str, Any]) -> AgentDecision:
         gaps = observation.get("gaps", [])
         if not gaps:
-            return AgentDecision(
+            fallback = AgentDecision(
                 action="no_action",
                 reason="No known under-tested branches detected in this diff.",
                 confidence=0.4,
                 requires_approval=False,
             )
-        descriptions = ", ".join(desc for _, desc, _ in gaps)
-        return AgentDecision(
-            action="propose_tests",
-            reason=f"Detected potentially under-tested behavior: {descriptions}.",
-            tool="execute_tests",
-            arguments={"candidate_count": len(gaps)},
-            confidence=0.75,
-            requires_approval=True,
+        else:
+            descriptions = ", ".join(desc for _, desc, _ in gaps)
+            fallback = AgentDecision(
+                action="propose_tests",
+                reason=f"Detected potentially under-tested behavior: {descriptions}.",
+                tool="execute_tests",
+                arguments={"candidate_count": len(gaps)},
+                confidence=0.75,
+                requires_approval=True,
+            )
+        return self.reason_with_llm(
+            context, observation, fallback, "test_quality.md", ["execute_tests"]
         )
 
     def act(self, context: AgentContext, decision: AgentDecision) -> dict[str, Any]:

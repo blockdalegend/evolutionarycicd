@@ -27,10 +27,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Generate coverage report
-        run: pytest --cov=app --cov-report=term-missing
+      - name: Generate test and coverage reports
+        run: pytest --cov=app --cov-report=term-missing --cov-report=xml --junitxml=junit.xml
+        continue-on-error: true
 
       - name: Collect PR context
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          AGENT_ARTIFACT_DIR: ${{ github.workspace }}
         run: python scripts/collect_pipeline_context.py > /tmp/context.json
 
       - name: Run Test Quality Agent
@@ -43,4 +49,5 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
           LLM_MODEL: ${{ vars.LLM_MODEL }}
-        run: python scripts/run_agent.py --agent test_quality
+          LLM_AUTH_MODE: ${{ vars.LLM_AUTH_MODE || 'bearer' }}
+        run: python scripts/run_agent.py --agent test_quality --context-file /tmp/context.json

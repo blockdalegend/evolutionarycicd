@@ -116,6 +116,16 @@ cp .env.example .env   # fill in LLM_API_KEY etc. only if you want real LLM call
 make install
 ```
 
+The agents use the configured OpenAI-compatible chat endpoint for structured
+reasoning. Set `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL` in `.env` for
+local runs, or configure `LLM_API_KEY` as a repository secret and the other
+settings as repository variables for GitHub Actions. For an Azure OpenAI or
+Microsoft Foundry v1 deployment, use
+`LLM_BASE_URL=https://<resource-name>.openai.azure.com/openai/v1`, set
+`LLM_MODEL` to the deployment name, and set `LLM_AUTH_MODE=api-key`.
+The trusted prompt files and policy allowlists remain in control of which
+tools an LLM decision may invoke.
+
 ## Local development
 
 ```bash
@@ -128,6 +138,11 @@ make demo-history     # seed data/pipeline_history.json with ~30 runs
 make agent-test        # run the Test Quality Agent locally (dry-run)
 make agent-optimize     # run the Pipeline Optimizer Agent locally (dry-run)
 ```
+
+To enable real GitHub comments/issues after testing in dry-run mode, set the
+repository variable `AGENT_DRY_RUN` to `false`. The workflows require the
+permissions declared in each workflow file; no workflow automatically merges
+or deploys changes.
 
 All agents default to `AGENT_DRY_RUN=true`: they log what they *would* do
 instead of writing to GitHub, so the whole system is safe to run without a
