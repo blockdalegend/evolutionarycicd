@@ -163,6 +163,22 @@ class TestQualityAgent(BaseAgent):
         for finding in findings:
             location = finding["location"].strip()
             location_parts = [part.strip() for part in location.split("::") if part.strip()]
+            recommended_test = finding["recommended_test"].lower()
+            generic_phrases = (
+                "add more tests",
+                "cover edge cases",
+                "improve organization",
+                "improve readability",
+            )
+            if any(phrase in recommended_test for phrase in generic_phrases):
+                raise ValueError(
+                    f"finding recommendation is too generic: {location}"
+                )
+            if location_parts[0].lower() not in recommended_test:
+                raise ValueError(
+                    "finding recommendation must name its cited file: "
+                    f"{location}"
+                )
             if (
                 not location_parts
                 or location_parts[0] not in known_files
@@ -202,7 +218,11 @@ class TestQualityAgent(BaseAgent):
                         "test or code change to make, and the expected assertion. "
                         "Include at least one finding each for assertions, behavior_coverage, "
                         "and isolation_mocking. If a category has no defect, cite the exact "
-                        "test file and explain what was checked and why no change is needed."
+                        "test file and explain what was checked and why no change is needed. "
+                        "The recommended_test must repeat the cited file path and name a "
+                        "specific test function to add or change. Never write 'add more tests', "
+                        "'cover edge cases', or 'improve organization' without naming the file, "
+                        "function, input, expected result, and assertion."
                     ),
                 ),
                 LLMMessage(
@@ -218,7 +238,7 @@ class TestQualityAgent(BaseAgent):
             ],
             response_schema=TestQualityReport.model_json_schema(),
             temperature=0.1,
-            max_tokens=2400,
+            max_tokens=4000,
         )
         response = LLMClient().complete(request)
         parsed = response.parsed

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from agents.base import AgentContext
 from agents.failure_analysis.agent import FailureAnalysisAgent
 from agents.test_quality.agent import TestQualityAgent
@@ -550,6 +552,53 @@ def test_test_quality_rejects_generic_report_with_test_sources(monkeypatch) -> N
 
     assert decision.arguments["quality_report"]["rating"] == "Needs improvement"
     assert "tests/test_payment.py" in decision.arguments["quality_report"]["weak_tests"][0]
+
+
+def test_test_quality_rejects_generic_finding_recommendation() -> None:
+    report = {
+        "rating": "Needs improvement",
+        "score": 60,
+        "assertions": "The supplied tests include some meaningful behavior assertions.",
+        "behavior_coverage": "The supplied tests leave important visible branches untested.",
+        "isolation_mocking": "The supplied test file does not show external dependency isolation.",
+        "reliability": "The supplied local tests are deterministic but incomplete.",
+        "findings": [
+            {
+                "category": "assertions",
+                "location": "tests/test_payment.py::test_charge",
+                "current_behavior": "The test exercises the charge path with one input.",
+                "gap": "A boundary input is not asserted in the supplied test.",
+                "why_it_matters": "The boundary can regress without a failing test.",
+                "recommended_test": "Add more tests for edge cases.",
+                "expected_assertion": "Assert the expected payment result.",
+            },
+            {
+                "category": "behavior_coverage",
+                "location": "tests/test_payment.py::test_charge",
+                "current_behavior": "The test checks one successful behavior path.",
+                "gap": "The error branch is not exercised by the supplied test.",
+                "why_it_matters": "Error handling can regress independently of success.",
+                "recommended_test": "Add a named error test in tests/test_payment.py.",
+                "expected_assertion": "Assert the expected exception.",
+            },
+            {
+                "category": "isolation_mocking",
+                "location": "tests/test_payment.py::test_charge",
+                "current_behavior": "The test uses a local payment input.",
+                "gap": "The dependency boundary is not visible in the test.",
+                "why_it_matters": "Uncontrolled dependencies can make the test flaky.",
+                "recommended_test": "Add a mock fixture in tests/test_payment.py.",
+                "expected_assertion": "Assert the result from the mock response.",
+            },
+        ],
+    }
+
+    with pytest.raises(ValueError, match="too generic"):
+        TestQualityAgent._validate_finding_evidence(
+            report,
+            AgentContext(test_sources={"tests/test_payment.py": "def test_charge(): pass"}),
+            {},
+        )
 
 
 def test_llm_client_uses_defaults_for_empty_environment(monkeypatch) -> None:
