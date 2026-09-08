@@ -42,11 +42,15 @@ def main() -> int:
 
     agent_cls = AGENTS[args.agent]
     agent = agent_cls()
-    context_data = (
-        json.loads(args.context_file.read_text(encoding="utf-8"))
-        if args.context_file and args.context_file.exists()
-        else collect_context()
-    )
+if args.context_file:
+    try:
+        context_data = json.loads(args.context_file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        parser.error(f"--context-file not found: {args.context_file}")
+    except json.JSONDecodeError as exc:
+        parser.error(f"--context-file is not valid JSON: {exc}")
+else:
+    context_data = collect_context()
     context = AgentContext.model_validate(context_data)
 
     orchestrator = AgentOrchestrator()
