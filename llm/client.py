@@ -130,17 +130,23 @@ def _auth_headers(self) -> dict[str, str]:
                     response = client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
                 body = response.json()
-                if endpoint_kind == "responses":
-                    content = body.get("output_text")
-                    if not isinstance(content, str):
-                        content = next(
-                            item["text"]
-                            for output in body.get("output", [])
-                            for item in output.get("content", [])
-                            if isinstance(item.get("text"), str)
-                        )
-                else:
-                    content = body["choices"][0]["message"]["content"]
+if endpoint_kind == "responses":
+    content = body.get("output_text")
+    if not isinstance(content, str):
+        content = next(
+            (
+                item.get("text")
+                for output in body.get("output", [])
+                if isinstance(output, dict)
+                for item in output.get("content", [])
+                if isinstance(item, dict) and isinstance(item.get("text"), str)
+            ),
+            "",
+        )
+        if not content:
+            return LLMResponse(success=False, error="LLM response missing output_text")
+else:
+    content = body["choices"][0]["message"]["content"]
                 parsed: dict[str, object] | None = None
                 if request.response_schema is not None:
                     try:
