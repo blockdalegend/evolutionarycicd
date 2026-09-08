@@ -67,11 +67,11 @@ class LLMClient:
         """Return whether an API key is available for real calls."""
         return bool(self.api_key)
 
-    def _auth_headers(self) -> dict[str, str]:
-        """Build authentication headers for OpenAI or Azure-compatible APIs."""
-        if self.auth_mode.lower() == "api-key":
-            return {"api-key": self.api_key}
-        return {"Authorization": f"Bearer {self.api_key}"}
+def _auth_headers(self) -> dict[str, str]:
+    """Build authentication headers for OpenAI or Azure-compatible APIs."""
+    if self.auth_mode.lower() == "api-key":
+        return {"api-key": self.api_key}
+    return {"Authorization": f"Bearer {self.api_key}"}
 
     def _endpoint_kind(self) -> str:
         """Return the API protocol selected by the configured base URL."""
