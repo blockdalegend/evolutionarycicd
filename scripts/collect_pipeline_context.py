@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
+import subprocess  # nosec B404 - used only for fixed, read-only git invocations
 import sys
 import tempfile
 from pathlib import Path
