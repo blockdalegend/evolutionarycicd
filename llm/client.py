@@ -67,11 +67,11 @@ class LLMClient:
         """Return whether an API key is available for real calls."""
         return bool(self.api_key)
 
-def _auth_headers(self) -> dict[str, str]:
-    """Build authentication headers for OpenAI or Azure-compatible APIs."""
-    if self.auth_mode.lower() == "api-key":
-        return {"api-key": self.api_key}
-    return {"Authorization": f"Bearer {self.api_key}"}
+    def _auth_headers(self) -> dict[str, str]:
+        """Build authentication headers for OpenAI or Azure-compatible APIs."""
+        if self.auth_mode.lower() == "api-key":
+            return {"api-key": self.api_key}
+        return {"Authorization": f"Bearer {self.api_key}"}
 
     def _endpoint_kind(self) -> str:
         """Return the API protocol selected by the configured base URL."""
@@ -130,23 +130,23 @@ def _auth_headers(self) -> dict[str, str]:
                     response = client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
                 body = response.json()
-if endpoint_kind == "responses":
-    content = body.get("output_text")
-    if not isinstance(content, str):
-        content = next(
-            (
-                item.get("text")
-                for output in body.get("output", [])
-                if isinstance(output, dict)
-                for item in output.get("content", [])
-                if isinstance(item, dict) and isinstance(item.get("text"), str)
-            ),
-            "",
-        )
-        if not content:
-            return LLMResponse(success=False, error="LLM response missing output_text")
-else:
-    content = body["choices"][0]["message"]["content"]
+                if endpoint_kind == "responses":
+                    content = body.get("output_text")
+                    if not isinstance(content, str):
+                        content = next(
+                            (
+                                item.get("text")
+                                for output in body.get("output", [])
+                                if isinstance(output, dict)
+                                for item in output.get("content", [])
+                                if isinstance(item, dict) and isinstance(item.get("text"), str)
+                            ),
+                            "",
+                        )
+                    if not content:
+                        return LLMResponse(success=False, error="LLM response missing output_text")
+                else:
+                    content = body["choices"][0]["message"]["content"]
                 parsed: dict[str, object] | None = None
                 if request.response_schema is not None:
                     try:
