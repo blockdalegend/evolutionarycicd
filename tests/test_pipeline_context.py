@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 from scripts.collect_pipeline_context import (
     _collect_local_git_diff,
     _collect_static_evidence,
@@ -95,7 +97,10 @@ def test_collect_static_evidence_includes_changed_functions_and_tests(tmp_path) 
     )
 
     assert evidence["parse_errors"] == []
-    files = {item["file"]: item for item in evidence["files"]}
+    files = {
+        item["file"]: item
+        for item in cast(list[dict[str, Any]], evidence["files"])
+    }
     assert files["app/service.py"]["functions"][0]["name"] == "charge"
     assert files["app/service.py"]["functions"][0]["conditions"][0]["expression"] == (
         "amount <= 0"

@@ -319,7 +319,7 @@ class TestQualityAgent(BaseAgent):
             f"{first_test_file.get('file', next(iter(context.test_sources), 'tests'))}::"
             f"{first_test.get('name', 'test_target_behavior')}"
         )
-        production_file = next(
+        production_file: dict[str, Any] = next(
             (
                 file_evidence
                 for file_evidence in static_files

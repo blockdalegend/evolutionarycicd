@@ -221,14 +221,20 @@ class SupplyChainAgent(BaseAgent):
         evidence = json.dumps(observation, default=str)
         validated: list[dict[str, Any]] = []
         for raw_change in proposed_changes:
-            change = SupplyChainChange.model_validate(raw_change)
-            if change.path not in repair_files:
-                raise ValueError(f"proposed change is not an existing repair file: {change.path}")
-            if "```" in change.content:
-                raise ValueError(f"proposed change contains a markdown fence: {change.path}")
-            if not all(location in evidence for location in change.finding_locations):
-                raise ValueError(f"proposed change cites unsupported evidence: {change.path}")
-            validated.append(change.model_dump())
+            change_model = SupplyChainChange.model_validate(raw_change)
+            if change_model.path not in repair_files:
+                raise ValueError(
+                    f"proposed change is not an existing repair file: {change_model.path}"
+                )
+            if "```" in change_model.content:
+                raise ValueError(
+                    f"proposed change contains a markdown fence: {change_model.path}"
+                )
+            if not all(location in evidence for location in change_model.finding_locations):
+                raise ValueError(
+                    f"proposed change cites unsupported evidence: {change_model.path}"
+                )
+            validated.append(change_model.model_dump())
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)

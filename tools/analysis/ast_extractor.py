@@ -33,7 +33,7 @@ class _EvidenceVisitor(ast.NodeVisitor):
         self._visit_function(node)
 
     def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
-        function = {
+        function: dict[str, Any] = {
             "name": node.name,
             "line": node.lineno,
             "end_line": getattr(node, "end_lineno", node.lineno),
