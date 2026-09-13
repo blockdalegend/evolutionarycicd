@@ -7,7 +7,7 @@ __pycache__/
 .pytest_cache/
 
 # --- Virtual environments ---
-.venv/
+.venv312/
 venv/
 env/
 
@@ -35,3 +35,5 @@ dist/
 # --- Demo telemetry (generated at runtime, not seed data) ---
 data/*.ndjson
 !data/.gitkeep
+.env.example
+.env

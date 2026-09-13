@@ -8,32 +8,249 @@ outside of GitHub Actions (e.g. locally), so the demo always works.
 from __future__ import annotations
 
 import json
+import os
+import re
+import subprocess  # nosec B404 - used only for fixed, read-only git invocations
 import sys
+import tempfile
 from pathlib import Path
+
+from defusedxml import ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import os  # noqa: E402
-
 from agents.orchestrator.orchestrator import load_github_event_context  # noqa: E402
 from telemetry.store import load_pipeline_history  # noqa: E402
+from tools.analysis.ast_extractor import extract_python_evidence  # noqa: E402
+from tools.github.client import GitHubClient  # noqa: E402
+
+
+def _read_json(path: Path) -> object:
+    """Read a JSON artifact, returning an empty value when it is unavailable."""
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _find_artifact(name: str) -> Path:
+    """Resolve a CI artifact from the configured directory or common temp paths."""
+    artifact_dir = Path(os.environ.get("AGENT_ARTIFACT_DIR", tempfile.gettempdir()))
+    temp_dir = Path(tempfile.gettempdir())
+    for candidate in (artifact_dir / name, Path.cwd() / name, temp_dir / name):
+        if candidate.exists():
+            return candidate
+    return artifact_dir / name
+
+
+def _collect_test_sources(
+    root: Path, max_files: int = 40, max_bytes: int = 20000
+) -> dict[str, str]:
+    """Collect bounded test source excerpts for semantic quality review."""
+    sources: dict[str, str] = {}
+    for path in sorted(root.glob("tests/**/*.py"))[:max_files]:
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        sources[str(path.relative_to(root))] = content[:max_bytes]
+    return sources
+
+
+def _parse_junit(path: Path) -> dict[str, object]:
+    """Extract authoritative failure details and counts from a JUnit report."""
+    if not path.exists():
+        return {}
+    try:
+        root = ET.parse(path).getroot()
+    except (OSError, ET.ParseError):
+        return {}
+    suites = list(root.iter("testsuite"))
+    failures: list[str] = []
+    for case in root.iter("testcase"):
+        if case.find("failure") is not None or case.find("error") is not None:
+            detail = case.find("failure")
+            if detail is None:
+                detail = case.find("error")
+            message = (detail.text or "") if detail is not None else ""
+            failures.append(f"{case.get('classname', '')}.{case.get('name', '')}: {message}")
+
+    def _suite_count(attribute: str) -> int:
+        return sum(int(suite.get(attribute, 0)) for suite in suites)
+
+    return {
+        "failures": failures,
+        "tests": _suite_count("tests") or int(root.get("tests", 0)),
+        "failures_count": _suite_count("failures") + _suite_count("errors"),
+    }
+
+
+def _parse_coverage(path: Path) -> dict[str, object]:
+    """Extract aggregate and per-file line/branch facts from coverage XML."""
+    if not path.exists():
+        return {}
+    try:
+        root = ET.parse(path).getroot()
+    except (OSError, ET.ParseError):
+        return {}
+    line_rate = root.get("line-rate")
+    if line_rate is None:
+        return {}
+    files: list[dict[str, object]] = []
+    has_branches = False
+    for class_node in root.findall(".//class"):
+        filename = class_node.get("filename", "")
+        line_node_list = class_node.findall("./lines/line")
+        missing_lines = [
+            int(line.get("number", 0))
+            for line in line_node_list
+            if line.get("hits") == "0" and line.get("number")
+        ]
+        branches: list[dict[str, int]] = []
+        for line in line_node_list:
+            condition_coverage = line.get("condition-coverage", "")
+            match = re.search(r"\((\d+)\s*/\s*(\d+)\)", condition_coverage)
+            if match is None:
+                continue
+            has_branches = True
+            branches.append(
+                {
+                    "line": int(line.get("number", 0)),
+                    "covered": int(match.group(1)),
+                    "total": int(match.group(2)),
+                }
+            )
+        files.append(
+            {
+                "file": filename,
+                "line_rate": round(float(class_node.get("line-rate", 0)) * 100, 2),
+                "missing_lines": missing_lines,
+                "branches": branches,
+            }
+        )
+    return {
+        "after": round(float(line_rate) * 100, 2),
+        "branch_coverage_available": has_branches,
+        "files": files,
+    }
+
+
+def _collect_static_evidence(
+    root: Path, changed_files: list[str], test_sources: dict[str, str]
+) -> dict[str, object]:
+    """Build AST evidence for changed Python files and collected tests."""
+    paths = set(path for path in changed_files if path.endswith(".py"))
+    paths.update(path for path in test_sources if path.endswith(".py"))
+    files: list[dict[str, object]] = []
+    parse_errors: list[dict[str, str]] = []
+    for relative_path in sorted(paths):
+        if relative_path in test_sources:
+            source = test_sources[relative_path]
+        else:
+            path = root / relative_path
+            try:
+                source = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                parse_errors.append({"file": relative_path, "error": str(exc)})
+                continue
+        try:
+            files.append(extract_python_evidence(relative_path, source))
+        except (SyntaxError, ValueError) as exc:
+            parse_errors.append({"file": relative_path, "error": str(exc)})
+    return {"files": files, "parse_errors": parse_errors}
+
+
+def _collect_local_git_diff() -> tuple[list[str], str]:
+    """Use the current branch diff as PR evidence for local agent runs."""
+    commands = [
+        ["git", "diff", "--name-only", "main...HEAD"],
+        ["git", "diff", "main...HEAD"],
+    ]
+    outputs: list[str] = []
+    for command in commands:
+        result = subprocess.run(  # nosec B603 B607 - fixed read-only git commands
+            command,
+            cwd=Path.cwd(),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        outputs.append(result.stdout)
+    changed_files = [line for line in outputs[0].splitlines() if line.strip()]
+    return changed_files, outputs[1]
+
+
+def _pull_request_number(event: dict[str, object]) -> int | None:
+    """Find a PR number in pull_request and workflow_run event payloads."""
+    pull_request = event.get("pull_request")
+    if isinstance(pull_request, dict) and isinstance(pull_request.get("number"), int):
+        return pull_request["number"]
+    pull_requests = event.get("pull_requests")
+    if isinstance(pull_requests, list) and pull_requests:
+        first = pull_requests[0]
+        if isinstance(first, dict) and isinstance(first.get("number"), int):
+            return first["number"]
+    configured = os.environ.get("AGENT_PULL_REQUEST_NUMBER")
+    return int(configured) if configured and configured.isdigit() else None
 
 
 def collect_context() -> dict[str, object]:
     """Collect available pipeline context from environment and event payload."""
     event = load_github_event_context()
     pull_request = event.get("pull_request", {})
+    pull_request = pull_request if isinstance(pull_request, dict) else {}
+    workflow_run = event.get("workflow_run", {})
+    workflow_run = workflow_run if isinstance(workflow_run, dict) else {}
+    pull_request_number = _pull_request_number(event)
+    pull_request_info = (
+        GitHubClient().get_pull_request(pull_request_number) if pull_request_number else None
+    )
+    junit = _parse_junit(_find_artifact("junit.xml"))
+    coverage = _parse_coverage(_find_artifact("coverage.xml"))
+    bandit = _read_json(_find_artifact("bandit.json"))
+    pip_audit = _read_json(_find_artifact("pip-audit.json"))
+    zizmor = _read_json(_find_artifact("zizmor.json"))
+    security_findings = {
+        "bandit": bandit.get("results", []) if isinstance(bandit, dict) else [],
+        "pip_audit": (
+            [
+                dependency
+                for dependency in pip_audit.get("dependencies", [])
+                if dependency.get("vulns")
+            ]
+            if isinstance(pip_audit, dict)
+            else pip_audit
+        ),
+        "github_actions": zizmor if isinstance(zizmor, list) else [],
+        "github_actions_scan_status": (
+            "completed" if isinstance(zizmor, list) else "unavailable"
+        ),
+    }
     history = load_pipeline_history()
+    local_changed_files, local_diff = _collect_local_git_diff()
+    changed_files = pull_request_info.changed_files if pull_request_info else local_changed_files
+    diff = pull_request_info.diff if pull_request_info else local_diff
+    test_sources = _collect_test_sources(Path.cwd())
 
     return {
         "repository": os.environ.get("GITHUB_REPOSITORY", ""),
-        "pull_request_number": pull_request.get("number"),
-        "commit_sha": pull_request.get("head", {}).get("sha"),
-        "changed_files": [],
-        "diff": "",
-        "test_results": {},
-        "coverage": {},
-        "security_findings": {},
+        "pull_request_number": (
+            pull_request_info.number if pull_request_info else pull_request_number
+        ),
+        "commit_sha": (
+            pull_request.get("head", {}).get("sha")
+            if isinstance(pull_request.get("head"), dict)
+            else workflow_run.get("head_sha", os.environ.get("GITHUB_SHA", ""))
+        ),
+        "changed_files": changed_files,
+        "diff": diff,
+        "test_results": junit,
+        "test_sources": test_sources,
+        "coverage": coverage,
+        "static_evidence": _collect_static_evidence(Path.cwd(), changed_files, test_sources),
+        "security_findings": security_findings,
         "pipeline_history": [json.loads(run.model_dump_json()) for run in history],
     }
 

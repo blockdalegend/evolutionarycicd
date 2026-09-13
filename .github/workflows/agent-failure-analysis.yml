@@ -1,19 +1,19 @@
-name: Agent - Test Quality
+name: Agent - Failure Analysis
 
 on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
-  pull_request:
 
 permissions:
-  contents: write
+  actions: read
+  contents: read
   pull-requests: write
 
 jobs:
-  test-quality-agent:
+  failure-analysis-agent:
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.pull_requests[0]
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,29 +47,33 @@ jobs:
           done
           ollama pull qwen2.5-coder:3b
 
-      - name: Generate test and coverage reports
-        run: pytest --cov=app --cov-branch --cov-report=term-missing --cov-report=xml --junitxml=junit.xml
+      - name: Download CI test report
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results
+          path: /tmp
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
         continue-on-error: true
 
-      - name: Collect PR context
+      - name: Collect failure context
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
-          AGENT_ARTIFACT_DIR: ${{ github.workspace }}
+          AGENT_ARTIFACT_DIR: /tmp
         run: python scripts/collect_pipeline_context.py > /tmp/context.json
 
-      - name: Run Test Quality Agent
+      - name: Run Failure Analysis Agent
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
           AGENT_DRY_RUN: ${{ vars.AGENT_DRY_RUN || 'true' }}
-          AGENT_ALLOW_FIX_PR: ${{ vars.AGENT_ALLOW_FIX_PR || 'false' }}
           AGENT_LOG_LEVEL: INFO
           LLM_API_KEY: ollama
           LLM_BASE_URL: http://127.0.0.1:11434/v1
           LLM_MODEL: qwen2.5-coder:3b
           LLM_AUTH_MODE: bearer
           LLM_TIMEOUT_SECONDS: "300"
-        run: python scripts/run_agent.py --agent test_quality --context-file /tmp/context.json
+        run: python scripts/run_agent.py --agent failure_analysis --context-file /tmp/context.json

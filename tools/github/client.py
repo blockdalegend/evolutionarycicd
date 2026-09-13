@@ -136,3 +136,59 @@ class GitHubClient:
         except Exception as exc:  # pragma: no cover - network/library failure path
             logger.warning("Failed to create branch: %s", exc)
             return False
+
+    def create_pull_request_with_files(
+        self,
+        branch_name: str,
+        base_branch: str,
+        title: str,
+        body: str,
+        files: dict[str, str],
+        repository: str | None = None,
+    ) -> dict[str, Any]:
+        """Commit supplied files on a branch and open a pull request."""
+        target_repository = repository or self.repository
+        if self.dry_run:
+            logger.info(
+                "[dry-run] would commit files and create pull request",
+                extra={
+                    "extra_fields": {
+                        "branch": branch_name,
+                        "base": base_branch,
+                        "files": sorted(files),
+                    }
+                },
+            )
+            return {
+                "created": False,
+                "dry_run": True,
+                "branch": branch_name,
+                "files": sorted(files),
+            }
+        if not self.token or not target_repository:
+            return {"created": False, "error": "missing GitHub token or repository"}
+        try:
+            from github import InputGitTreeElement
+
+            repo = self._client().get_repo(target_repository)
+            base = repo.get_branch(base_branch)
+            repo.create_git_ref(ref=f"refs/heads/{branch_name}", sha=base.commit.sha)
+            tree_elements = []
+            for path, content in files.items():
+                blob = repo.create_git_blob(content, "utf-8")
+                tree_elements.append(
+                    InputGitTreeElement(path=path, mode="100644", type="blob", sha=blob.sha)
+                )
+            tree = repo.create_git_tree(tree_elements, base_tree=base.commit.commit.tree)
+            commit = repo.create_git_commit(title, tree, [base.commit.commit])
+            repo.get_git_ref(f"heads/{branch_name}").edit(commit.sha)
+            pull_request = repo.create_pull(
+                title=title,
+                body=body,
+                head=branch_name,
+                base=base_branch,
+            )
+            return {"created": True, "url": pull_request.html_url, "branch": branch_name}
+        except Exception as exc:  # pragma: no cover - network/library failure path
+            logger.warning("Failed to create Test Quality pull request: %s", exc)
+            return {"created": False, "error": str(exc)}

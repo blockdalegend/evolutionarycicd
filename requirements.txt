@@ -1,7 +1,8 @@
 # Core app
 pydantic==2.9.2
-python-dotenv==1.2.2
+python-dotenv==1.2.1
 PyYAML==6.0.2
+defusedxml==0.7.1
 
 # GitHub integration
 PyGithub==2.4.0
@@ -20,3 +21,4 @@ mypy==1.11.2
 # Security
 bandit==1.7.10
 pip-audit==2.7.3
+zizmor==1.30.0

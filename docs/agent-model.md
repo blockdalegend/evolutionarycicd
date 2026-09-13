@@ -45,7 +45,7 @@ sequenceDiagram
 
 | Agent | Purpose | Can modify code? | Can merge/deploy? |
 |---|---|---|---|
-| `test_quality_agent` | Flags under-tested diff branches; can generate & run candidate tests | Yes (requires approval) | No |
+| `test_quality_agent` | Reviews assertions, behavioral coverage, mocking, isolation, reliability, and missing tests; can generate & run candidate tests | Yes (requires approval) | No |
 | `failure_analysis_agent` | Explains why CI failed and which files are likely at fault | No | No |
 | `merge_conflict_agent` | Proposes and validates a merge-conflict resolution | Yes (requires approval) | No |
 | `supply_chain_agent` | Summarizes dependency/action pinning and scanner findings | No | No |

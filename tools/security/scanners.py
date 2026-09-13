@@ -1,8 +1,8 @@
-"""Wrappers around deterministic security scanners (Bandit, pip-audit).
+"""Wrappers around deterministic security scanners.
 
-The Supply Chain Agent consumes the *output* of these tools; it never
-pretends to be a scanner itself. If a tool is unavailable, the wrapper
-returns an empty, clearly-labeled result instead of fabricating findings.
+The Supply Chain Agent consumes the output of these tools; it never pretends
+to be a scanner itself. If a tool is unavailable, the wrapper returns an
+empty, clearly-labeled result instead of fabricating findings.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import subprocess  # nosec B404 - used only for fixed, read-only scanner invocat
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from shutil import which
 
 
 @dataclass
@@ -79,6 +80,31 @@ def run_pip_audit(requirements_path: Path) -> ScanResult:
     )
     return ScanResult(
         tool="pip-audit", ran_successfully=True, findings=findings, raw_output=result.stdout
+    )
+
+
+def run_zizmor(workflows_dir: Path) -> ScanResult:
+    """Audit GitHub Actions workflows for security vulnerabilities."""
+    executable = which("zizmor")
+    if executable is None:
+        return ScanResult(tool="zizmor", ran_successfully=False, raw_output="zizmor not found")
+    cmd = [executable, "--format", "json", str(workflows_dir)]
+    result = subprocess.run(  # nosec B603 - fixed scanner executable, shell=False
+        cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    try:
+        data = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return ScanResult(tool="zizmor", ran_successfully=False, raw_output=result.stdout)
+    findings = data if isinstance(data, list) else data.get("findings", [])
+    return ScanResult(
+        tool="zizmor",
+        ran_successfully=True,
+        findings=findings if isinstance(findings, list) else [],
+        raw_output=result.stdout,
     )
 
 

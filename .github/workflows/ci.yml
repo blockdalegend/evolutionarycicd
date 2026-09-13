@@ -32,7 +32,7 @@ jobs:
 
       - name: pytest with coverage
         run: |
-          pytest --cov=app --cov-report=term-missing --cov-report=xml --junitxml=junit.xml
+          pytest --cov=app --cov-branch --cov-report=term-missing --cov-report=xml --junitxml=junit.xml
 
       - name: Bandit (security)
         run: bandit -r app agents tools llm telemetry scripts -q

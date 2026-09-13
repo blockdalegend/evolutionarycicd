@@ -100,6 +100,8 @@ class AgentOrchestrator:
                     extra={"extra_fields": {"agent": agent.name, "tool": tool}},
                 )
                 raise PolicyViolation(f"{agent.name} is not permitted to use tool '{tool}'")
+            if tool and self.requires_approval(tool):
+                decision.requires_approval = True
 
         result = agent.run(context, policy_check=policy_check)
 

@@ -35,23 +35,27 @@ class MergeConflictAgent(BaseAgent):
     def reason(self, context: AgentContext, observation: dict[str, Any]) -> AgentDecision:
         conflicted_files = observation.get("conflicted_files", [])
         if not conflicted_files:
-            return AgentDecision(
+            fallback = AgentDecision(
                 action="no_action",
                 reason="No conflicted files detected.",
                 confidence=0.3,
                 requires_approval=False,
             )
-        return AgentDecision(
-            action="propose_resolution",
-            reason=(
-                f"Detected conflicts in {len(conflicted_files)} file(s): "
-                f"{', '.join(conflicted_files)}. Proposing a resolution that keeps "
-                "both changes where possible; validating with the test suite."
-            ),
-            tool="execute_tests",
-            arguments={"files": conflicted_files},
-            confidence=0.5,
-            requires_approval=True,
+        else:
+            fallback = AgentDecision(
+                action="propose_resolution",
+                reason=(
+                    f"Detected conflicts in {len(conflicted_files)} file(s): "
+                    f"{', '.join(conflicted_files)}. Proposing a resolution that keeps "
+                    "both changes where possible; validating with the test suite."
+                ),
+                tool="execute_tests",
+                arguments={"files": conflicted_files},
+                confidence=0.5,
+                requires_approval=True,
+            )
+        return self.reason_with_llm(
+            context, observation, fallback, "merge_conflict.md", ["execute_tests"]
         )
 
     def act(self, context: AgentContext, decision: AgentDecision) -> dict[str, Any]:

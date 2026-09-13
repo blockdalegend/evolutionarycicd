@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 jobs:
@@ -25,6 +25,26 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Start local Ollama model
+        run: |
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 5 \
+            -o /tmp/ollama-install.sh https://ollama.com/install.sh
+          for attempt in {1..5}; do
+            if sh /tmp/ollama-install.sh; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              exit 1
+            fi
+            sleep 5
+          done
+          ollama serve > /tmp/ollama.log 2>&1 &
+          for attempt in {1..30}; do
+            curl -fsS http://127.0.0.1:11434/api/tags && break
+            sleep 1
+          done
+          ollama pull qwen2.5-coder:3b
+
       - name: Bandit (security)
         run: bandit -r app agents tools llm telemetry scripts -q -f json -o /tmp/bandit.json
         continue-on-error: true
@@ -33,14 +53,29 @@ jobs:
         run: pip-audit -r requirements.txt -f json -o /tmp/pip-audit.json
         continue-on-error: true
 
+      - name: Zizmor (GitHub Actions security)
+        run: zizmor --format json .github/workflows > /tmp/zizmor.json
+        continue-on-error: true
+
+      - name: Collect PR context
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          AGENT_ARTIFACT_DIR: /tmp
+        run: python scripts/collect_pipeline_context.py > /tmp/context.json
+
       - name: Run Supply Chain Agent
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
           AGENT_DRY_RUN: ${{ vars.AGENT_DRY_RUN || 'true' }}
+          AGENT_ALLOW_FIX_PR: ${{ vars.AGENT_ALLOW_FIX_PR || 'false' }}
           AGENT_LOG_LEVEL: INFO
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
-          LLM_MODEL: ${{ vars.LLM_MODEL }}
-        run: python scripts/run_agent.py --agent supply_chain
+          LLM_API_KEY: ollama
+          LLM_BASE_URL: http://127.0.0.1:11434/v1
+          LLM_MODEL: qwen2.5-coder:3b
+          LLM_AUTH_MODE: bearer
+          LLM_TIMEOUT_SECONDS: "300"
+        run: python scripts/run_agent.py --agent supply_chain --context-file /tmp/context.json
