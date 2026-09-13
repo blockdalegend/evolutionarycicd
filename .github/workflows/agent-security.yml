@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 jobs:
@@ -71,6 +71,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
           AGENT_DRY_RUN: ${{ vars.AGENT_DRY_RUN || 'true' }}
+          AGENT_ALLOW_FIX_PR: ${{ vars.AGENT_ALLOW_FIX_PR || 'false' }}
           AGENT_LOG_LEVEL: INFO
           LLM_API_KEY: ollama
           LLM_BASE_URL: http://127.0.0.1:11434/v1

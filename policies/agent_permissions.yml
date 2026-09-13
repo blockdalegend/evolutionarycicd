@@ -42,6 +42,7 @@ supply_chain_agent:
   execute_security_scans: true
   modify_code: false
   comment_pull_request: true
+  create_pull_request: true
   merge_pull_request: false
   deploy: false
 
