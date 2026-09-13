@@ -45,6 +45,44 @@ class SupplyChainAgent(BaseAgent):
             return f"{tool}: {finding}"
         if not isinstance(finding, dict):
             return f"{tool}: {finding}"
+        if tool == "pip-audit":
+            package = finding.get("name") or finding.get("package") or "package not supplied"
+            version = finding.get("version", "version not supplied")
+            vulnerabilities = finding.get("vulns", [])
+            if not vulnerabilities:
+                return (
+                    f"{tool}: {package}; installed version: {version}; "
+                    "vulnerability details not supplied"
+                )
+            details = []
+            for vulnerability in vulnerabilities:
+                if not isinstance(vulnerability, dict):
+                    details.append(str(vulnerability))
+                    continue
+                identifier = vulnerability.get("id", "ID not supplied")
+                aliases = vulnerability.get("aliases") or []
+                fix_versions = vulnerability.get("fix_versions") or []
+                description = vulnerability.get("description") or "description not supplied"
+                details.append(
+                    f"{identifier}; aliases: {aliases or 'not supplied'}; "
+                    f"fix versions: {fix_versions or 'not supplied'}; description: {description}"
+                )
+            return (
+                f"{tool}: {package}; installed version: {version}; "
+                + " | ".join(details)
+            )
+        if tool == "Bandit":
+            identifier = finding.get("test_id") or finding.get("issue_id") or "finding"
+            issue = finding.get("issue_text") or "issue text not supplied"
+            location = finding.get("filename", "location not supplied")
+            line = finding.get("line_number")
+            if line is not None:
+                location = f"{location}:{line}"
+            return (
+                f"{tool}: {identifier}; severity: {finding.get('issue_severity', 'not supplied')}; "
+                f"confidence: {finding.get('issue_confidence', 'not supplied')}; "
+                f"location: {location}; issue: {issue}"
+            )
         identifier = (
             finding.get("ident")
             or finding.get("id")
@@ -93,6 +131,59 @@ class SupplyChainAgent(BaseAgent):
             f"{observation.get('github_actions_scan_status', 'unavailable')}"
         )
         return "\n".join(sections)
+
+    @staticmethod
+    def _render_recommendations(observation: dict[str, Any]) -> str:
+        """Provide conservative remediation guidance even when the LLM is unavailable."""
+        recommendations = ["Recommendations:"]
+        for finding in observation.get("pip_audit_findings", []):
+            if not isinstance(finding, dict):
+                continue
+            package = finding.get("name") or finding.get("package", "package not supplied")
+            for vulnerability in finding.get("vulns", []):
+                if not isinstance(vulnerability, dict):
+                    continue
+                identifier = vulnerability.get("id", "ID not supplied")
+                fix_versions = vulnerability.get("fix_versions") or []
+                if fix_versions:
+                    recommendations.append(
+                        f"- {identifier} ({package}): upgrade to one of the supplied fixed "
+                        f"versions: {fix_versions}."
+                    )
+                else:
+                    recommendations.append(
+                        f"- {identifier} ({package}): no fixed version was supplied; "
+                        "review the advisory before changing the dependency."
+                    )
+        for finding in observation.get("bandit_findings", []):
+            if isinstance(finding, dict):
+                identifier = finding.get("test_id") or finding.get("issue_id", "finding")
+                location = finding.get("filename", "location not supplied")
+                line = finding.get("line_number")
+                if line is not None:
+                    location = f"{location}:{line}"
+                recommendations.append(
+                    f"- {identifier} at {location}: review the reported issue and apply the "
+                    "least-privilege or input-handling fix appropriate to the code."
+                )
+        for finding in observation.get("github_actions_findings", []):
+            if not isinstance(finding, dict):
+                continue
+            identifier = finding.get("ident", finding.get("id", "finding"))
+            url = finding.get("url") or finding.get("remediation_url") or "URL not supplied"
+            if identifier == "unpinned-uses":
+                action = "replace each mutable action tag with a reviewed full commit SHA"
+            elif identifier == "dangerous-triggers":
+                action = "review the workflow trigger and untrusted-input permissions"
+            elif identifier == "artipacked":
+                action = "review artifact handling and prevent untrusted artifact overwrite"
+            else:
+                action = "follow the scanner guidance for this audit"
+            recommendations.append(f"- {identifier}: {action}; reference: {url}.")
+        if not observation.get("pip_audit_findings") and not observation.get("bandit_findings") \
+                and not observation.get("github_actions_findings"):
+            recommendations.append("- No scanner-specific remediation is required.")
+        return "\n".join(recommendations)
 
     name = "supply_chain_agent"
 
@@ -161,6 +252,8 @@ class SupplyChainAgent(BaseAgent):
             issues.append(f"{len(observation['unpinned_actions'])} unpinned GitHub Action(s)")
         if observation["pip_audit_findings"]:
             issues.append(f"{len(observation['pip_audit_findings'])} known-vulnerable package(s)")
+        if observation["bandit_findings"]:
+            issues.append(f"{len(observation['bandit_findings'])} Bandit security finding(s)")
         if observation["github_actions_findings"]:
             issues.append(
                 f"{len(observation['github_actions_findings'])} GitHub Actions "
@@ -205,7 +298,13 @@ class SupplyChainAgent(BaseAgent):
             decision.action = "propose_supply_chain_fix_pull_request"
             decision.tool = "create_pull_request"
             decision.requires_approval = True
-        decision.reason = decision.reason + "\n\n" + self._render_scanner_details(observation)
+        decision.reason = (
+            decision.reason
+            + "\n\n"
+            + self._render_scanner_details(observation)
+            + "\n\n"
+            + self._render_recommendations(observation)
+        )
         return decision
 
     def act(self, context: AgentContext, decision: AgentDecision) -> dict[str, Any]:

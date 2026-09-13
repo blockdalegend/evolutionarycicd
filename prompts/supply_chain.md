@@ -41,6 +41,12 @@ Summarize:
 - Which findings are most urgent and why.
 - What the recommended remediation is (e.g. pin the exact version, replace a
   mutable tag with a full commit SHA, upgrade a vulnerable package).
+- For every `pip-audit` vulnerability, report the package, installed version,
+  vulnerability ID, aliases, description, and available fixed versions. For
+  every Bandit finding, report the test ID, issue text, severity, confidence,
+  and file/line. For every Zizmor finding, report the audit ID, severity,
+  confidence, affected location when supplied, and remediation URL when
+  supplied. State `not supplied` for absent fields.
 - Include concrete evidence in the observation: tool name, finding ID or
   package/action, severity when supplied, affected file or location when
   supplied, and the scanner status. Never summarize multiple findings as only

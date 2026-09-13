@@ -60,6 +60,50 @@ def test_reason_preserves_deterministic_finding_details(monkeypatch) -> None:
     assert "Zizmor scan status: completed" in decision.reason
 
 
+def test_render_scanner_details_preserves_vulnerability_evidence() -> None:
+    observation = {
+        "pip_audit_findings": [
+            {
+                "name": "python-dotenv",
+                "version": "1.2.1",
+                "vulns": [
+                    {
+                        "id": "GHSA-example",
+                        "aliases": ["CVE-2026-1234"],
+                        "fix_versions": ["1.2.2"],
+                        "description": "Example vulnerability description.",
+                    }
+                ],
+            }
+        ],
+        "bandit_findings": [
+            {
+                "test_id": "B602",
+                "issue_text": " subprocess call with shell=True identified",
+                "issue_severity": "High",
+                "issue_confidence": "High",
+                "filename": "scripts/collect_pipeline_context.py",
+                "line_number": 22,
+            }
+        ],
+        "github_actions_findings": [],
+        "github_actions_scan_status": "completed",
+        "unpinned_requirements": [],
+        "unpinned_actions": [],
+    }
+
+    rendered = SupplyChainAgent._render_scanner_details(observation)
+
+    assert "python-dotenv" in rendered
+    assert "installed version: 1.2.1" in rendered
+    assert "GHSA-example" in rendered
+    assert "CVE-2026-1234" in rendered
+    assert "fix versions: ['1.2.2']" in rendered
+    assert "B602" in rendered
+    assert "severity: High" in rendered
+    assert "scripts/collect_pipeline_context.py:22" in rendered
+
+
 def test_reason_accepts_evidence_backed_pinned_fix(monkeypatch) -> None:
     requirements = "requests==2.33.0\n# exact version pin\n"
     monkeypatch.setattr(
