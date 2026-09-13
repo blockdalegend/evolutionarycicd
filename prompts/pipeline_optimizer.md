@@ -21,9 +21,16 @@ single PR, analyzing historical pipeline telemetry.
   `arguments.recommended_fixes` that describes the concrete investigation,
   workflow change, or code/configuration change a maintainer should review.
 - Preserve the deterministic recommendation details supplied in the
-  observation; do not invent a fix unsupported by the historical telemetry.
-- Return structured output only where requested; otherwise use the issue
-  format below.
+  observation as evidence; do not invent a fix unsupported by the historical
+  telemetry.
+- The model analysis must explain the mechanism behind each pattern, not just
+  restate the count. Name the workflow and stage, connect the finding to exact
+  telemetry values, and propose a concrete workflow/configuration/code change.
+- Do not use generic advice such as "investigate", "improve the pipeline", or
+  "add more tests" without naming the exact object and change.
+- When asked for JSON, return a `PipelineAnalysis` object with a substantive
+  `summary` and one or more `findings`. Each finding must contain `category`,
+  `evidence`, `analysis`, and `recommended_fix`.
 
 ## Task
 
