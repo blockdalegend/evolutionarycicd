@@ -41,6 +41,7 @@ class PipelineOptimizerAgent(BaseAgent):
 
     def reason(self, context: AgentContext, observation: dict[str, Any]) -> AgentDecision:
         runs = observation.get("runs", [])
+        recommendations: list[str] = []
         if not runs:
             fallback = AgentDecision(
                 action="no_action",
@@ -49,7 +50,8 @@ class PipelineOptimizerAgent(BaseAgent):
                 requires_approval=False,
             )
         else:
-            recommendations = self._analyze(runs)
+            recommendation_details = self._analyze_details(runs)
+            recommendations = [item["recommendation"] for item in recommendation_details]
             if not recommendations:
                 fallback = AgentDecision(
                     action="no_action",
@@ -66,23 +68,37 @@ class PipelineOptimizerAgent(BaseAgent):
                         + "\n".join(f"- {rec}" for rec in recommendations)
                     ),
                     tool="propose_workflow_change",
-                    arguments={"recommendations": recommendations},
+                    arguments={
+                        "recommendations": recommendations,
+                        "recommended_fixes": recommendation_details,
+                    },
                     confidence=0.65,
                     requires_approval=True,
                 )
-        return self.reason_with_llm(
+        decision = self.reason_with_llm(
             context,
             observation,
             fallback,
             "pipeline_optimizer.md",
             ["propose_workflow_change"],
+            preserve_argument_keys=("recommendations", "recommended_fixes"),
         )
+        if recommendations:
+            arguments = dict(decision.arguments)
+            for key in ("recommendations", "recommended_fixes"):
+                if key not in arguments:
+                    arguments[key] = fallback.arguments[key]
+            decision = decision.model_copy(update={"arguments": arguments})
+        return decision
 
     def act(self, context: AgentContext, decision: AgentDecision) -> dict[str, Any]:
         # This agent only *proposes*; it never modifies workflow files. The
         # caller (scripts/run_agent.py) is responsible for turning the
         # recommendation into a GitHub issue for human review.
-        return {"recommendations": decision.arguments.get("recommendations", [])}
+        return {
+            "recommendations": decision.arguments.get("recommendations", []),
+            "recommended_fixes": decision.arguments.get("recommended_fixes", []),
+        }
 
     def validate(
         self, context: AgentContext, decision: AgentDecision, tool_result: dict[str, Any]
@@ -92,7 +108,22 @@ class PipelineOptimizerAgent(BaseAgent):
     @staticmethod
     def _analyze(runs: list[dict[str, Any]]) -> list[str]:
         """Return human-readable recommendations derived from ``runs``."""
+        return [item["recommendation"] for item in PipelineOptimizerAgent._analyze_details(runs)]
+
+    @staticmethod
+    def _analyze_details(runs: list[dict[str, Any]]) -> list[dict[str, str]]:
+        """Return recommendations with a concrete, reviewable fix for each issue."""
         recommendations: list[str] = []
+        details: list[dict[str, str]] = []
+
+        def add(recommendation: str, recommended_fix: str) -> None:
+            recommendations.append(recommendation)
+            details.append(
+                {
+                    "recommendation": recommendation,
+                    "recommended_fix": recommended_fix,
+                }
+            )
 
         failing_stage_counts: Counter[str] = Counter()
         durations_by_workflow: dict[str, list[float]] = defaultdict(list)
@@ -114,21 +145,29 @@ class PipelineOptimizerAgent(BaseAgent):
         for stage_key, count in failing_stage_counts.items():
             if count >= REPEATED_FAILURE_THRESHOLD:
                 workflow, _, stage = stage_key.partition(":")
-                recommendations.append(
+                add(
                     f"Stage '{stage}' in workflow '{workflow}' failed {count} times "
-                    "historically -- investigate and consider quarantining or fixing it."
+                    "historically -- investigate and consider quarantining or fixing it.",
+                    f"Inspect the '{stage}' logs, reproduce the failure, and repair the "
+                    "underlying check. Quarantine the stage only if the failure is confirmed "
+                    "to be nondeterministic, with an owner and exit criteria.",
                 )
 
         for reason, count in failure_reason_counts.items():
             if count >= FLAKY_THRESHOLD and "flaky" in reason.lower():
-                recommendations.append(
+                add(
                     f"Recurring flaky-test signal '{reason}' seen {count} times -- "
-                    "consider quarantining the flaky test."
+                    "consider quarantining the flaky test.",
+                    f"Quarantine '{reason}' behind an explicit tracking issue, capture the "
+                    "failure evidence, and replace external timing dependence with a "
+                    "deterministic fixture or bounded retry before re-enabling it.",
                 )
             elif count >= FLAKY_THRESHOLD and "dependency" in reason.lower():
-                recommendations.append(
+                add(
                     f"Recurring dependency failure '{reason}' seen {count} times -- "
-                    "investigate the upstream dependency."
+                    "investigate the upstream dependency.",
+                    "Add dependency caching and a bounded retry for transient registry errors; "
+                    "pin or mirror the affected dependency and alert on repeated failures.",
                 )
 
         for workflow, durations in durations_by_workflow.items():
@@ -137,17 +176,23 @@ class PipelineOptimizerAgent(BaseAgent):
             avg = mean(durations)
             slow_runs = [d for d in durations if d > avg * SLOW_RUN_MULTIPLIER]
             if slow_runs:
-                recommendations.append(
+                add(
                     f"Workflow '{workflow}' has {len(slow_runs)} run(s) significantly "
                     f"slower than its {avg:.0f}s average -- consider caching dependencies "
-                    "or splitting slow test suites."
+                    "or splitting slow test suites.",
+                    f"Profile the slow '{workflow}' runs, cache dependency installation, and "
+                    "split the slowest test group into parallel jobs with separate timing "
+                    "budgets.",
                 )
 
         for workflow, retries in retry_counts_by_workflow.items():
             if retries and mean(retries) >= 1.0:
-                recommendations.append(
+                add(
                     f"Workflow '{workflow}' averages {mean(retries):.1f} retries per run -- "
-                    "consider a workflow condition change to fail faster or reduce retries."
+                    "consider a workflow condition change to fail faster or reduce retries.",
+                    f"Review retry conditions in '{workflow}', retry only known transient "
+                    "failures, cap attempts, and fail fast for deterministic test or lint "
+                    "errors.",
                 )
 
-        return recommendations
+        return details
