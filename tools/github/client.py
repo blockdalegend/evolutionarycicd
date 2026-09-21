@@ -20,6 +20,8 @@ from telemetry.logger import get_logger
 
 logger = get_logger(__name__)
 
+MAX_GITHUB_ISSUE_BODY_CHARS = 60000
+
 
 def _is_dry_run() -> bool:
     return os.environ.get("AGENT_DRY_RUN", "true").lower() not in {"0", "false", "no"}
@@ -106,6 +108,11 @@ class GitHubClient:
         self, title: str, body: str, labels: list[str] | None = None
     ) -> dict[str, Any]:
         """Create an issue and return its number and URL when available."""
+        if len(body) > MAX_GITHUB_ISSUE_BODY_CHARS:
+            body = (
+                body[:MAX_GITHUB_ISSUE_BODY_CHARS]
+                + "\n\n[Issue body truncated to fit GitHub's size limit.]"
+            )
         if self.dry_run:
             logger.info(
                 "WOULD CREATE ISSUE",

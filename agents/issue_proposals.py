@@ -8,6 +8,9 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+MAX_EVIDENCE_CHARS = 16000
+MAX_EVIDENCE_VALUE_CHARS = 4000
+
 
 class IssueProposal(BaseModel):
     """An evidence-backed work order for the Copilot coding agent."""
@@ -144,11 +147,22 @@ def proposal_from_decision(
     if not files:
         files = list(arguments.get("files", []) or [])
     reason = getattr(decision, "reason", "Actionable finding")
+    evidence: list[str] = []
+    evidence_chars = 0
+    for key, value in observation.items():
+        if key in {"repair_files", "test_sources", "diff"} or not value:
+            continue
+        item = f"{key}: {value}"
+        remaining = MAX_EVIDENCE_CHARS - evidence_chars
+        if remaining <= 0:
+            break
+        evidence.append(item[: min(MAX_EVIDENCE_VALUE_CHARS, remaining)])
+        evidence_chars += len(evidence[-1])
     return IssueProposal(
         title=f"[{source_agent.replace('_agent', '').replace('_', ' ').title()}] {reason[:100]}",
         summary=reason,
         problem=reason,
-        evidence=[f"{key}: {value}" for key, value in observation.items() if value][:8],
+        evidence=evidence,
         affected_files=files[:20],
         requested_change=reason,
         acceptance_criteria=["Implement the requested change", "Existing tests continue to pass"],

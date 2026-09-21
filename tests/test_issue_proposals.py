@@ -91,6 +91,26 @@ def test_merge_conflict_proposal_requests_copilot_assignment() -> None:
     assert proposal.assign_to_copilot is True
 
 
+def test_proposal_evidence_excludes_large_repair_payloads() -> None:
+    proposal = proposal_from_decision(
+        "supply_chain_agent",
+        AgentContext(),
+        {
+            "pip_audit_findings": [{"name": "example-package"}],
+            "repair_files": {".github/workflows/ci.yml": "x" * 100000},
+        },
+        AgentDecision(
+            action="report_supply_chain_findings",
+            reason="A scanner reported a dependency issue.",
+            confidence=0.8,
+        ),
+    )
+
+    assert proposal is not None
+    assert all("repair_files" not in item for item in proposal.evidence)
+    assert len(proposal.render_markdown()) < 20000
+
+
 def _proposal(confidence: float = 0.9) -> IssueProposal:
     return IssueProposal(
         title="Actionable finding",
