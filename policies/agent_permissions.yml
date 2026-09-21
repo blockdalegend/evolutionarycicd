@@ -34,7 +34,7 @@ merge_conflict_agent:
   execute_tests: true
   modify_code: false
   create_issue: true
-  assign_copilot: false
+  assign_copilot: true
   merge_pull_request: false
   deploy: false
 

@@ -47,7 +47,7 @@ issue_policy:
       auto_assign_copilot: true
     merge_conflict_agent:
       create_issue: true
-      auto_assign_copilot: false
+      auto_assign_copilot: true
     pipeline_optimizer_agent:
       create_issue: true
       auto_assign_copilot: true

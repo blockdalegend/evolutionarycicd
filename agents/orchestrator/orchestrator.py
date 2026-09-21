@@ -125,7 +125,7 @@ class AgentOrchestrator:
         minimum = float(policy.get("minimum_confidence", 0.8))
         agent_policy = self.permissions.get(proposal.source_agent, {})
         issue_agent_policy = policy.get("agents", {}).get(proposal.source_agent, agent_policy)
-        assign = proposal.assign_to_copilot and bool(
+        assign = bool(
             issue_agent_policy.get(
                 "assign_copilot", issue_agent_policy.get("auto_assign_copilot", False)
             )

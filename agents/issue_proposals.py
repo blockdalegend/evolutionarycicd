@@ -25,7 +25,7 @@ class IssueProposal(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     original_pull_request: int | None = None
     commit_sha: str | None = None
-    assign_to_copilot: bool = False
+    assign_to_copilot: bool = True
     requires_human_review: bool = True
     finding_type: str = "finding"
 
@@ -162,13 +162,7 @@ def proposal_from_decision(
         confidence=confidence,
         original_pull_request=getattr(context, "pull_request_number", None),
         commit_sha=getattr(context, "commit_sha", None),
-        assign_to_copilot=source_agent
-        in {
-            "test_quality_agent",
-            "failure_analysis_agent",
-            "supply_chain_agent",
-            "pipeline_optimizer_agent",
-        },
+        assign_to_copilot=True,
         requires_human_review=True,
         finding_type=action,
     )

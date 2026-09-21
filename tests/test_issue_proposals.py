@@ -74,6 +74,23 @@ def test_pipeline_optimizer_proposal_requests_copilot_assignment() -> None:
     assert proposal.assign_to_copilot is True
 
 
+def test_merge_conflict_proposal_requests_copilot_assignment() -> None:
+    proposal = proposal_from_decision(
+        "merge_conflict_agent",
+        AgentContext(),
+        {"conflicts": ["app/main.py"]},
+        AgentDecision(
+            action="resolve_merge_conflict",
+            reason="The pull request contains an unresolved merge conflict.",
+            confidence=0.85,
+            requires_approval=True,
+        ),
+    )
+
+    assert proposal is not None
+    assert proposal.assign_to_copilot is True
+
+
 def _proposal(confidence: float = 0.9) -> IssueProposal:
     return IssueProposal(
         title="Actionable finding",
