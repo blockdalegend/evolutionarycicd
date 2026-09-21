@@ -145,3 +145,36 @@ def test_dry_run_issue_and_copilot_assignment_are_write_free() -> None:
     )
     result = orchestrator.handle_issue_proposal(_proposal())
     assert result["dry_run"] is True
+
+
+def test_copilot_assignment_result_reports_success(monkeypatch) -> None:
+    class FakeIssue:
+        def create_comment(self, body: str) -> None:
+            pass
+
+        def add_to_assignees(self, assignee: str) -> None:
+            assert assignee == "copilot-swe-agent"
+
+    client = GitHubClient(token="token", repository="owner/repo")
+    client.dry_run = False
+    monkeypatch.setattr(client, "get_issue", lambda number: FakeIssue())
+
+    result = client.assign_issue_to_copilot_result(9, "instructions")
+
+    assert result == {"assigned": True, "assignee": "copilot-swe-agent"}
+
+
+def test_copilot_assignment_result_reports_api_failure(monkeypatch) -> None:
+    class FakeIssue:
+        def add_to_assignees(self, assignee: str) -> None:
+            raise RuntimeError("permission denied")
+
+    client = GitHubClient(token="token", repository="owner/repo")
+    client.dry_run = False
+    monkeypatch.setattr(client, "get_issue", lambda number: FakeIssue())
+
+    result = client.assign_issue_to_copilot_result(9)
+
+    assert result["assigned"] is False
+    assert result["assignee"] == "copilot-swe-agent"
+    assert result["error"] == "permission denied"

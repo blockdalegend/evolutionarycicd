@@ -182,25 +182,35 @@ class GitHubClient:
             logger.warning("Failed to comment on issue #%s: %s", number, exc)
             return False
 
-    def assign_issue_to_copilot(self, number: int, instructions: str | None = None) -> bool:
-        """Assign an issue using GitHub's supported issue assignee API."""
+    def assign_issue_to_copilot_result(
+        self, number: int, instructions: str | None = None
+    ) -> dict[str, Any]:
+        """Assign an issue and return the outcome and any API error."""
         if self.dry_run:
             logger.info(
                 "WOULD ASSIGN COPILOT",
                 extra={"extra_fields": {"issue": number, "instructions": instructions or ""}},
             )
-            return True
+            return {"assigned": True, "assignee": "copilot-swe-agent", "dry_run": True}
         issue = self.get_issue(number)
         if issue is None:
-            return False
+            return {"assigned": False, "error": "issue could not be fetched"}
         try:
             if instructions:
                 issue.create_comment(instructions)
             issue.add_to_assignees("copilot-swe-agent")
-            return True
+            return {"assigned": True, "assignee": "copilot-swe-agent"}
         except Exception as exc:  # pragma: no cover
             logger.warning("Failed to assign Copilot to issue #%s: %s", number, exc)
-            return False
+            return {
+                "assigned": False,
+                "assignee": "copilot-swe-agent",
+                "error": str(exc),
+            }
+
+    def assign_issue_to_copilot(self, number: int, instructions: str | None = None) -> bool:
+        """Assign an issue using GitHub's supported issue assignee API."""
+        return self.assign_issue_to_copilot_result(number, instructions)["assigned"]
 
     def create_branch(self, branch_name: str, from_branch: str = "main") -> bool:
         """Create a branch, honoring dry-run mode."""

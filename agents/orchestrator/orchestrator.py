@@ -156,11 +156,12 @@ class AgentOrchestrator:
         if existing:
             self.github_client.comment_on_issue(existing["number"], proposal.render_markdown())
             if assign:
-                existing["assigned"] = self.github_client.assign_issue_to_copilot(
+                assignment = self.github_client.assign_issue_to_copilot_result(
                     existing["number"],
                     "Respect repository architecture, make the smallest reasonable change, "
                     "run the validation commands, create a PR, and never merge or deploy.",
                 )
+                existing.update(assignment)
             record_telemetry(
                 AgentTelemetryRecord(
                     agent=proposal.source_agent,
@@ -190,11 +191,12 @@ class AgentOrchestrator:
             )
             return created
         if assign and (created.get("number") or self.github_client.dry_run):
-            created["assigned"] = self.github_client.assign_issue_to_copilot(
+            assignment = self.github_client.assign_issue_to_copilot_result(
                 created.get("number", 0),
                 "Respect repository architecture, make the smallest reasonable change, "
                 "run the validation commands, create a PR, and never merge or deploy.",
             )
+            created.update(assignment)
             record_telemetry(
                 AgentTelemetryRecord(
                     agent=proposal.source_agent,
