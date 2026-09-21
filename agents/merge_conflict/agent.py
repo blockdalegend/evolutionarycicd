@@ -51,7 +51,7 @@ class MergeConflictAgent(BaseAgent):
                 ),
                 tool="execute_tests",
                 arguments={"files": conflicted_files},
-                confidence=0.5,
+                confidence=0.85,
                 requires_approval=True,
             )
         return self.reason_with_llm(

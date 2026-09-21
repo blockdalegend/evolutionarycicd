@@ -95,7 +95,7 @@ class PipelineOptimizerAgent(BaseAgent):
                         "recommendations": recommendations,
                         "recommended_fixes": recommendation_details,
                     },
-                    confidence=0.65,
+                    confidence=0.8,
                     requires_approval=True,
                 )
         if not runs:

@@ -100,21 +100,99 @@ class GitHubClient:
 
     def create_issue(self, title: str, body: str, labels: list[str] | None = None) -> bool:
         """Create a GitHub issue, honoring dry-run mode."""
+        return self.create_issue_record(title, body, labels)["created"]
+
+    def create_issue_record(
+        self, title: str, body: str, labels: list[str] | None = None
+    ) -> dict[str, Any]:
+        """Create an issue and return its number and URL when available."""
         if self.dry_run:
             logger.info(
-                "[dry-run] would create issue",
-                extra={"extra_fields": {"title": title, "labels": labels or []}},
+                "WOULD CREATE ISSUE",
+                extra={"extra_fields": {"title": title, "body": body, "labels": labels or []}},
             )
-            return True
+            return {"created": True, "dry_run": True}
         if not self.token or not self.repository:
             logger.warning("Cannot create issue: missing token/repository.")
-            return False
+            return {"created": False, "error": "missing token or repository"}
         try:
             repo = self._client().get_repo(self.repository)
-            repo.create_issue(title=title, body=body, labels=labels or [])
-            return True
+            issue = repo.create_issue(title=title, body=body, labels=labels or [])
+            return {"created": True, "number": issue.number, "url": issue.html_url}
         except Exception as exc:  # pragma: no cover - network/library failure path
             logger.warning("Failed to create issue: %s", exc)
+            return {"created": False, "error": str(exc)}
+
+    def find_existing_issue(self, fingerprint: str) -> dict[str, Any] | None:
+        """Find an open issue containing the machine-readable finding fingerprint."""
+        if self.dry_run or not self.token or not self.repository:
+            return None
+        try:
+            repo = self._client().get_repo(self.repository)
+            for issue in repo.get_issues(state="open"):
+                if f"evolutionary-cicd:fingerprint={fingerprint}" in (issue.body or ""):
+                    return {"number": issue.number, "url": issue.html_url}
+        except Exception as exc:  # pragma: no cover - network/library failure path
+            logger.warning("Failed to search existing issues: %s", exc)
+        return None
+
+    def get_issue(self, number: int) -> Any | None:
+        """Fetch an issue through the encapsulated GitHub client."""
+        if not self.token or not self.repository:
+            return None
+        try:
+            return self._client().get_repo(self.repository).get_issue(number)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Failed to fetch issue #%s: %s", number, exc)
+            return None
+
+    def list_issue_comments(self, number: int) -> list[Any]:
+        """List issue comments, returning an empty list on API failure."""
+        issue = self.get_issue(number)
+        if issue is None:
+            return []
+        try:
+            return list(issue.get_comments())
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Failed to list comments for issue #%s: %s", number, exc)
+            return []
+
+    def comment_on_issue(self, number: int, body: str) -> bool:
+        """Comment on an issue, honoring dry-run mode."""
+        if self.dry_run:
+            logger.info(
+                "WOULD COMMENT ON ISSUE",
+                extra={"extra_fields": {"issue": number, "body": body}},
+            )
+            return True
+        issue = self.get_issue(number)
+        if issue is None:
+            return False
+        try:
+            issue.create_comment(body)
+            return True
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Failed to comment on issue #%s: %s", number, exc)
+            return False
+
+    def assign_issue_to_copilot(self, number: int, instructions: str | None = None) -> bool:
+        """Assign an issue using GitHub's supported issue assignee API."""
+        if self.dry_run:
+            logger.info(
+                "WOULD ASSIGN COPILOT",
+                extra={"extra_fields": {"issue": number, "instructions": instructions or ""}},
+            )
+            return True
+        issue = self.get_issue(number)
+        if issue is None:
+            return False
+        try:
+            if instructions:
+                issue.create_comment(instructions)
+            issue.add_to_assignees("copilot-swe-agent")
+            return True
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Failed to assign Copilot to issue #%s: %s", number, exc)
             return False
 
     def create_branch(self, branch_name: str, from_branch: str = "main") -> bool:

@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+from agents.base import AgentContext, AgentDecision
+from agents.issue_proposals import IssueProposal
+
+
+def test_issue_proposal_is_stable_and_rendered_as_a_work_order() -> None:
+    proposal = IssueProposal(
+        title="[Test Quality] Add validation tests",
+        summary="Validation paths lack coverage.",
+        problem="New validation branches are untested.",
+        evidence=["coverage: 76.8%"],
+        affected_files=["app/services/payment_service.py"],
+        requested_change="Add focused tests without changing production behavior.",
+        acceptance_criteria=["All new paths are covered"],
+        validation_commands=["pytest"],
+        labels=["agent-recommendation"],
+        source_agent="test_quality_agent",
+        confidence=0.94,
+        assign_to_copilot=True,
+    )
+    assert proposal.fingerprint() == proposal.model_copy().fingerprint()
+    body = proposal.render_markdown()
+    assert "evolutionary-cicd:fingerprint=" in body
+    assert "Copilot may implement" in body
+    assert "pytest" in body
+
+
+def test_issue_proposal_rejects_invalid_confidence() -> None:
+    try:
+        IssueProposal(
+            title="x",
+            summary="x",
+            problem="x",
+            requested_change="x",
+            source_agent="x",
+            confidence=1.1,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("invalid confidence should be rejected")
+
+
+def test_agent_run_attaches_issue_proposal_without_executing_remediation() -> None:
+    from agents.failure_analysis.agent import FailureAnalysisAgent
+
+    result = FailureAnalysisAgent().run(
+        AgentContext(
+            changed_files=["app/services/payment_service.py"],
+            test_results={"failures": ["app/services/payment_service.py: assertion failed"]},
+        )
+    )
+    assert result.success
+    assert result.artifacts["issue_proposal"]["source_agent"] == "failure_analysis_agent"

@@ -42,7 +42,7 @@ class FailureAnalysisAgent(BaseAgent):
                 if any(f in fail for fail in failures)
             ]
             suspects = likely_files or observation.get("changed_files", [])[:3]
-            confidence = 0.7 if likely_files else 0.4
+            confidence = 0.85 if likely_files else 0.4
             fallback = AgentDecision(
                 action="report_failure_analysis",
                 reason=(

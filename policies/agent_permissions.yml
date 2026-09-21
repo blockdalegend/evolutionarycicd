@@ -11,10 +11,9 @@ test_quality_agent:
   read_repository: true
   read_pull_request: true
   execute_tests: true
-  modify_code: true
-  create_branch: true
-  push_branch: true
-  create_pull_request: true
+  modify_code: false
+  create_issue: true
+  assign_copilot: true
   comment_pull_request: true
   merge_pull_request: false
   deploy: false
@@ -25,15 +24,17 @@ failure_analysis_agent:
   execute_tests: true
   modify_code: false
   comment_pull_request: true
+  create_issue: true
+  assign_copilot: true
   merge_pull_request: false
   deploy: false
 
 merge_conflict_agent:
   read_repository: true
   execute_tests: true
-  modify_code: true
-  create_branch: true
-  push_branch: false
+  modify_code: false
+  create_issue: true
+  assign_copilot: false
   merge_pull_request: false
   deploy: false
 
@@ -41,6 +42,8 @@ supply_chain_agent:
   read_repository: true
   execute_security_scans: true
   modify_code: false
+  create_issue: true
+  assign_copilot: true
   comment_pull_request: true
   create_pull_request: true
   merge_pull_request: false
@@ -51,5 +54,7 @@ pipeline_optimizer_agent:
   read_pipeline_history: true
   propose_workflow_change: true
   modify_workflow: false
+  create_issue: true
+  assign_copilot: false
   merge_pull_request: false
   deploy: false
