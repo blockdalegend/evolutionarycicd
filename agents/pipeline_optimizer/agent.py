@@ -12,11 +12,17 @@ approval, matching ``policies/agent_permissions.yml`` where
 
 from __future__ import annotations
 
+import json
 from collections import Counter, defaultdict
 from statistics import mean
-from typing import Any
+from typing import Any, Literal
 
-from agents.base import AgentContext, AgentDecision, BaseAgent
+from pydantic import BaseModel, Field
+
+from agents.base import PROMPTS_DIR, AgentContext, AgentDecision, BaseAgent
+from llm.client import LLMClient
+from llm.models import LLMMessage, LLMRequest
+from telemetry.logger import get_logger
 
 #: A stage is considered "repeatedly failing" once it fails at least this
 #: many times across the observed history.
@@ -29,6 +35,23 @@ SLOW_RUN_MULTIPLIER = 1.5
 #: A failure reason is considered "flaky" once it recurs at least this often
 #: while also having at least one successful run of the same workflow.
 FLAKY_THRESHOLD = 2
+logger = get_logger(__name__)
+
+
+class PipelineFinding(BaseModel):
+    """One evidence-backed finding and its model-authored remediation."""
+
+    category: Literal["repeated_failure", "flaky_test", "dependency", "performance", "retries"]
+    evidence: str = Field(min_length=20)
+    analysis: str = Field(min_length=30)
+    recommended_fix: str = Field(min_length=30)
+
+
+class PipelineAnalysis(BaseModel):
+    """Structured analysis returned by the pipeline optimizer LLM."""
+
+    summary: str = Field(min_length=40)
+    findings: list[PipelineFinding] = Field(min_length=1, max_length=8)
 
 
 class PipelineOptimizerAgent(BaseAgent):
@@ -41,6 +64,7 @@ class PipelineOptimizerAgent(BaseAgent):
 
     def reason(self, context: AgentContext, observation: dict[str, Any]) -> AgentDecision:
         runs = observation.get("runs", [])
+        recommendations: list[str] = []
         if not runs:
             fallback = AgentDecision(
                 action="no_action",
@@ -49,7 +73,8 @@ class PipelineOptimizerAgent(BaseAgent):
                 requires_approval=False,
             )
         else:
-            recommendations = self._analyze(runs)
+            recommendation_details = self._analyze_details(runs)
+            recommendations = [item["recommendation"] for item in recommendation_details]
             if not recommendations:
                 fallback = AgentDecision(
                     action="no_action",
@@ -66,23 +91,117 @@ class PipelineOptimizerAgent(BaseAgent):
                         + "\n".join(f"- {rec}" for rec in recommendations)
                     ),
                     tool="propose_workflow_change",
-                    arguments={"recommendations": recommendations},
+                    arguments={
+                        "recommendations": recommendations,
+                        "recommended_fixes": recommendation_details,
+                    },
                     confidence=0.65,
                     requires_approval=True,
                 )
-        return self.reason_with_llm(
-            context,
-            observation,
-            fallback,
-            "pipeline_optimizer.md",
-            ["propose_workflow_change"],
+        if not runs:
+            return fallback
+        analysis = self._request_llm_analysis(context, observation)
+        if analysis is None:
+            return fallback
+        return self._decision_from_analysis(analysis)
+
+    @classmethod
+    def _decision_from_analysis(cls, analysis: dict[str, Any]) -> AgentDecision:
+        findings = analysis["findings"]
+        recommendations = [finding["analysis"] for finding in findings]
+        recommended_fixes = [
+            {
+                "recommendation": finding["analysis"],
+                "recommended_fix": finding["recommended_fix"],
+                "evidence": finding["evidence"],
+                "category": finding["category"],
+            }
+            for finding in findings
+        ]
+        reason = analysis["summary"] + "\n\n" + "\n".join(
+            f"- {finding['analysis']}\n  Fix: {finding['recommended_fix']}"
+            for finding in findings
         )
+        return AgentDecision(
+            action="recommend_pipeline_improvements",
+            reason=reason,
+            tool="propose_workflow_change",
+            arguments={
+                "analysis_source": "llm",
+                "llm_analysis": analysis,
+                "recommendations": recommendations,
+                "recommended_fixes": recommended_fixes,
+            },
+            confidence=0.8,
+            requires_approval=True,
+        )
+
+    @classmethod
+    def _request_llm_analysis(
+        cls, context: AgentContext, observation: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Request and validate an evidence-backed analysis from the configured LLM."""
+        prompt_path = PROMPTS_DIR / "pipeline_optimizer.md"
+        try:
+            system_prompt = prompt_path.read_text(encoding="utf-8")
+            request = LLMRequest(
+                messages=[
+                    LLMMessage(
+                        role="system",
+                        content=(
+                            system_prompt
+                            + "\n\nReturn only a JSON PipelineAnalysis object matching the schema. "
+                            "Do not return an AgentDecision. Every finding must cite exact "
+                            "workflow, stage, reason, count, or duration evidence from the "
+                            "supplied runs. Explain why the pattern matters and propose a "
+                            "specific fix. Never use generic phrases such as 'investigate', "
+                            "'improve the pipeline', or 'add more tests' without naming the "
+                            "workflow/stage and the concrete change."
+                        ),
+                    ),
+                    LLMMessage(
+                        role="user",
+                        content=(
+                            "Analyze these historical pipeline runs as an expert CI/CD "
+                            "engineer. Produce only evidence-backed findings.\n\n"
+                            f"Agent context:\n{context.model_dump_json()}\n\n"
+                            f"Observation:\n{json.dumps(observation, default=str)}"
+                        ),
+                    ),
+                ],
+                response_schema=PipelineAnalysis.model_json_schema(),
+                temperature=0.2,
+                max_tokens=4000,
+            )
+            response = LLMClient().complete(request)
+            parsed = response.parsed
+            if parsed is None and response.content:
+                content = response.content.strip()
+                parsed = json.loads(content[content.find("{") : content.rfind("}") + 1])
+            if not isinstance(parsed, dict):
+                raise ValueError("LLM did not return a PipelineAnalysis object")
+            analysis = PipelineAnalysis.model_validate(parsed).model_dump()
+            evidence = json.dumps(observation, default=str)
+            for finding in analysis["findings"]:
+                if not any(
+                    token in evidence
+                    for token in finding["evidence"].split()
+                    if len(token) >= 4
+                ):
+                    raise ValueError("LLM finding does not cite supplied telemetry")
+            return analysis
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            logger.warning("Pipeline optimizer LLM analysis unavailable: %s", exc)
+            return None
 
     def act(self, context: AgentContext, decision: AgentDecision) -> dict[str, Any]:
         # This agent only *proposes*; it never modifies workflow files. The
         # caller (scripts/run_agent.py) is responsible for turning the
         # recommendation into a GitHub issue for human review.
-        return {"recommendations": decision.arguments.get("recommendations", [])}
+        return {
+            "recommendations": decision.arguments.get("recommendations", []),
+            "recommended_fixes": decision.arguments.get("recommended_fixes", []),
+        }
 
     def validate(
         self, context: AgentContext, decision: AgentDecision, tool_result: dict[str, Any]
@@ -92,7 +211,22 @@ class PipelineOptimizerAgent(BaseAgent):
     @staticmethod
     def _analyze(runs: list[dict[str, Any]]) -> list[str]:
         """Return human-readable recommendations derived from ``runs``."""
+        return [item["recommendation"] for item in PipelineOptimizerAgent._analyze_details(runs)]
+
+    @staticmethod
+    def _analyze_details(runs: list[dict[str, Any]]) -> list[dict[str, str]]:
+        """Return recommendations with a concrete, reviewable fix for each issue."""
         recommendations: list[str] = []
+        details: list[dict[str, str]] = []
+
+        def add(recommendation: str, recommended_fix: str) -> None:
+            recommendations.append(recommendation)
+            details.append(
+                {
+                    "recommendation": recommendation,
+                    "recommended_fix": recommended_fix,
+                }
+            )
 
         failing_stage_counts: Counter[str] = Counter()
         durations_by_workflow: dict[str, list[float]] = defaultdict(list)
@@ -114,21 +248,29 @@ class PipelineOptimizerAgent(BaseAgent):
         for stage_key, count in failing_stage_counts.items():
             if count >= REPEATED_FAILURE_THRESHOLD:
                 workflow, _, stage = stage_key.partition(":")
-                recommendations.append(
+                add(
                     f"Stage '{stage}' in workflow '{workflow}' failed {count} times "
-                    "historically -- investigate and consider quarantining or fixing it."
+                    "historically -- investigate and consider quarantining or fixing it.",
+                    f"Inspect the '{stage}' logs, reproduce the failure, and repair the "
+                    "underlying check. Quarantine the stage only if the failure is confirmed "
+                    "to be nondeterministic, with an owner and exit criteria.",
                 )
 
         for reason, count in failure_reason_counts.items():
             if count >= FLAKY_THRESHOLD and "flaky" in reason.lower():
-                recommendations.append(
+                add(
                     f"Recurring flaky-test signal '{reason}' seen {count} times -- "
-                    "consider quarantining the flaky test."
+                    "consider quarantining the flaky test.",
+                    f"Quarantine '{reason}' behind an explicit tracking issue, capture the "
+                    "failure evidence, and replace external timing dependence with a "
+                    "deterministic fixture or bounded retry before re-enabling it.",
                 )
             elif count >= FLAKY_THRESHOLD and "dependency" in reason.lower():
-                recommendations.append(
+                add(
                     f"Recurring dependency failure '{reason}' seen {count} times -- "
-                    "investigate the upstream dependency."
+                    "investigate the upstream dependency.",
+                    "Add dependency caching and a bounded retry for transient registry errors; "
+                    "pin or mirror the affected dependency and alert on repeated failures.",
                 )
 
         for workflow, durations in durations_by_workflow.items():
@@ -137,17 +279,23 @@ class PipelineOptimizerAgent(BaseAgent):
             avg = mean(durations)
             slow_runs = [d for d in durations if d > avg * SLOW_RUN_MULTIPLIER]
             if slow_runs:
-                recommendations.append(
+                add(
                     f"Workflow '{workflow}' has {len(slow_runs)} run(s) significantly "
                     f"slower than its {avg:.0f}s average -- consider caching dependencies "
-                    "or splitting slow test suites."
+                    "or splitting slow test suites.",
+                    f"Profile the slow '{workflow}' runs, cache dependency installation, and "
+                    "split the slowest test group into parallel jobs with separate timing "
+                    "budgets.",
                 )
 
         for workflow, retries in retry_counts_by_workflow.items():
             if retries and mean(retries) >= 1.0:
-                recommendations.append(
+                add(
                     f"Workflow '{workflow}' averages {mean(retries):.1f} retries per run -- "
-                    "consider a workflow condition change to fail faster or reduce retries."
+                    "consider a workflow condition change to fail faster or reduce retries.",
+                    f"Review retry conditions in '{workflow}', retry only known transient "
+                    "failures, cap attempts, and fail fast for deterministic test or lint "
+                    "errors.",
                 )
 
-        return recommendations
+        return details
