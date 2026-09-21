@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test security ci demo-history agent-test agent-optimize
+.PHONY: install lint typecheck test security ci demo-history agent-test agent-optimize demo-test-quality-issue demo-security-issue demo-failure-issue demo-evolution-issue
 
 install:
 	pip install -r requirements.txt
@@ -26,3 +26,15 @@ agent-test:
 
 agent-optimize:
 	python scripts/run_agent.py --agent pipeline_optimizer
+
+demo-test-quality-issue:
+	AGENT_DRY_RUN=true python scripts/run_agent.py --agent test_quality
+
+demo-security-issue:
+	AGENT_DRY_RUN=true python scripts/run_agent.py --agent supply_chain
+
+demo-failure-issue:
+	AGENT_DRY_RUN=true python scripts/run_agent.py --agent failure_analysis
+
+demo-evolution-issue:
+	AGENT_DRY_RUN=true python scripts/run_agent.py --agent pipeline_optimizer

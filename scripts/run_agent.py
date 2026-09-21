@@ -22,7 +22,6 @@ from agents.pipeline_optimizer.agent import PipelineOptimizerAgent  # noqa: E402
 from agents.supply_chain.agent import SupplyChainAgent  # noqa: E402
 from agents.test_quality.agent import TestQualityAgent  # noqa: E402
 from scripts.collect_pipeline_context import collect_context  # noqa: E402
-from tools.github.client import GitHubClient  # noqa: E402
 
 AGENTS: dict[str, type[BaseAgent]] = {
     "test_quality": TestQualityAgent,
@@ -58,36 +57,6 @@ def main() -> int:
 
     print(f"success={result.success}")
     print(result.message)
-
-    if args.agent == "pipeline_optimizer" and result.success:
-        decision = result.artifacts.get("decision", {})
-        recommendations = decision.get("arguments", {}).get("recommendations", [])
-        recommended_fixes = decision.get("arguments", {}).get("recommended_fixes", [])
-        if recommendations:
-            details_by_recommendation = {
-                item.get("recommendation"): item.get("recommended_fix", "")
-                for item in recommended_fixes
-                if isinstance(item, dict)
-            }
-            recommendation_lines = []
-            for recommendation in recommendations:
-                recommendation_lines.append(f"- **Recommendation:** {recommendation}")
-                fix = details_by_recommendation.get(recommendation)
-                if fix:
-                    recommendation_lines.append(f"  **Recommended fix:** {fix}")
-            github_client = GitHubClient()
-            body = (
-                "## Evolutionary CI/CD: Pipeline Optimization Recommendations\n\n"
-                + "Analyzed pipeline history and identified actionable improvements.\n\n"
-                + "\n".join(recommendation_lines)
-                + "\n\nThese recommendations require human review before any workflow "
-                "file is changed.\n"
-            )
-            github_client.create_issue(
-                title="Evolutionary CI/CD: pipeline optimization recommendations",
-                body=body,
-                labels=["agent-recommendation"],
-            )
 
     return 0 if result.success else 1
 

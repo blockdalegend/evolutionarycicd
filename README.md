@@ -174,3 +174,27 @@ pipeline-history-driven recommendation issue.
 ## License
 
 [MIT](LICENSE)
+# Evolutionary CI/CD
+
+This project demonstrates bounded, issue-driven CI/CD agents. Agents do not
+normally remediate code: they produce evidence-backed work orders, and policy
+controls whether GitHub Copilot may implement them.
+
+The agent proposes the hypothesis. The pipeline provides the evidence.
+**Capability != Authority.**
+
+Run a safe local demonstration with:
+
+```bash
+make demo-test-quality-issue
+make demo-security-issue
+make demo-failure-issue
+make demo-evolution-issue
+```
+
+These commands use `AGENT_DRY_RUN=true` and print the issue that would be
+created. A live demonstration requires `GITHUB_TOKEN`, `GITHUB_REPOSITORY`,
+repository Actions permissions for issue writes, and an explicit
+`AGENT_DRY_RUN=false`. Copilot assignment uses GitHub's issue assignee API and
+the `copilot-swe-agent` account; repository availability of that account is a
+GitHub setting outside this project.

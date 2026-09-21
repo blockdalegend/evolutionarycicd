@@ -21,6 +21,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from agents.issue_proposals import proposal_from_decision
 from llm.client import LLMClient
 from llm.models import LLMMessage, LLMRequest
 from telemetry.logger import get_logger
@@ -212,6 +213,9 @@ class BaseAgent(ABC):
         try:
             observation = self.observe(context)
             decision = self.reason(context, observation)
+            proposal = proposal_from_decision(self.name, context, observation, decision)
+            if proposal is not None:
+                decision.arguments.setdefault("issue_proposal", proposal.model_dump(mode="json"))
             if policy_check is not None:
                 policy_check(decision)
             tool_result = self.act(context, decision)
@@ -226,7 +230,11 @@ class BaseAgent(ABC):
         return AgentResult(
             success=success,
             message=decision.reason if decision else "no decision produced",
-            artifacts={"decision": decision.model_dump() if decision else {}},
+            artifacts={
+                "decision": decision.model_dump() if decision else {},
+                "issue_proposal": (
+                    decision.arguments.get("issue_proposal") if decision else None
+                ),
+            },
             validation_results=validation,
         )
-

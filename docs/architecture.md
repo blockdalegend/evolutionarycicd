@@ -45,3 +45,23 @@ flowchart TD
 * **Deterministic tools stay deterministic.** Tests are run by pytest.
   Vulnerabilities are found by Bandit/pip-audit. The LLM is never asked to
   simulate any of these.
+# Issue-driven architecture
+
+Specialized agents are discovery agents: they collect deterministic evidence,
+reason about it, and emit an `IssueProposal`. The policy engine applies the
+confidence threshold, deduplicates fingerprints, and may hand the issue to
+Copilot. Copilot opens a PR; Actions validates it and a human merges it.
+
+```mermaid
+flowchart TD
+  Developer --> GitHub --> Actions --> Tools --> Agents --> Proposal[IssueProposal]
+  Proposal --> Policy --> Issue[GitHub Issue] --> Copilot --> PR[Pull Request]
+  PR --> Actions --> Human[Human Review] --> Merge --> Telemetry --> Optimizer[Pipeline Optimizer]
+  Optimizer -. feedback loop .-> Agents
+```
+
+**The agent proposes the hypothesis. The pipeline provides the evidence.**
+Capability != Authority: discovery, implementation, validation, merge, and
+deployment remain separate authorities. `VERIFY` records whether a change
+technically works; `MEASURE` compares later telemetry to determine whether it
+improved delivery.

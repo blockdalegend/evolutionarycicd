@@ -35,6 +35,13 @@ class AgentTelemetryRecord(BaseModel):
     requires_approval: bool = False
     duration_ms: float | None = None
     success: bool = True
+    event: str | None = None
+    issue_number: int | None = None
+    issue_url: str | None = None
+    issue_fingerprint: str | None = None
+    finding_type: str | None = None
+    associated_pull_request: int | None = None
+    copilot_assignment: str | None = None
 
 
 class PipelineRun(BaseModel):

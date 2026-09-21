@@ -571,7 +571,7 @@ class TestQualityAgent(BaseAgent):
                 ),
                 tool="execute_tests",
                 arguments={"candidate_count": len(gaps)},
-                confidence=0.75,
+                confidence=0.85,
                 requires_approval=True,
             )
         decision = self.reason_with_llm(

@@ -24,7 +24,10 @@ from typing import Any
 import yaml
 
 from agents.base import AgentContext, AgentResult, BaseAgent
+from agents.issue_proposals import IssueProposal
 from telemetry.logger import get_logger
+from telemetry.models import AgentTelemetryRecord
+from telemetry.store import record_telemetry
 from tools.github.client import GitHubClient
 
 logger = get_logger(__name__)
@@ -105,10 +108,113 @@ class AgentOrchestrator:
 
         result = agent.run(context, policy_check=policy_check)
 
+        proposal_data = result.artifacts.get("issue_proposal")
+        if proposal_data:
+            self.handle_issue_proposal(IssueProposal.model_validate(proposal_data))
+
         if context.pull_request_number is not None:
             comment = self._format_pr_comment(agent.name, result)
             self.github_client.post_pr_comment(context.pull_request_number, comment)
         return result
+
+    def handle_issue_proposal(self, proposal: IssueProposal) -> dict[str, Any]:
+        """Apply threshold, deduplication, and assignment policy to a proposal."""
+        policy = self.approval_rules.get("issue_policy", {})
+        minimum = float(policy.get("minimum_confidence", 0.8))
+        agent_policy = self.permissions.get(proposal.source_agent, {})
+        issue_agent_policy = policy.get("agents", {}).get(proposal.source_agent, agent_policy)
+        if proposal.confidence < minimum or not issue_agent_policy.get("create_issue", False):
+            record_telemetry(
+                AgentTelemetryRecord(
+                    agent=proposal.source_agent,
+                    event="issue_proposed",
+                    confidence=proposal.confidence,
+                    finding_type=proposal.finding_type,
+                    issue_fingerprint=proposal.fingerprint(),
+                    associated_pull_request=proposal.original_pull_request,
+                    success=False,
+                )
+            )
+            logger.info(
+                "issue proposal withheld",
+                extra={
+                    "extra_fields": {
+                        "agent": proposal.source_agent,
+                        "confidence": proposal.confidence,
+                    }
+                },
+            )
+            return {"created": False, "reason": "policy or confidence threshold"}
+        existing = self.github_client.find_existing_issue(proposal.fingerprint())
+        if existing:
+            self.github_client.comment_on_issue(existing["number"], proposal.render_markdown())
+            record_telemetry(
+                AgentTelemetryRecord(
+                    agent=proposal.source_agent,
+                    event="issue_reused",
+                    confidence=proposal.confidence,
+                    finding_type=proposal.finding_type,
+                    issue_number=existing["number"],
+                    issue_url=existing.get("url"),
+                    issue_fingerprint=proposal.fingerprint(),
+                    associated_pull_request=proposal.original_pull_request,
+                )
+            )
+            return {"created": False, "reused": True, **existing}
+        created = self.github_client.create_issue_record(
+            proposal.title, proposal.render_markdown(), proposal.labels
+        )
+        if not created.get("created"):
+            record_telemetry(
+                AgentTelemetryRecord(
+                    agent=proposal.source_agent,
+                    event="issue_created",
+                    confidence=proposal.confidence,
+                    finding_type=proposal.finding_type,
+                    issue_fingerprint=proposal.fingerprint(),
+                    success=False,
+                )
+            )
+            return created
+        assign = proposal.assign_to_copilot and bool(
+            issue_agent_policy.get(
+                "assign_copilot", issue_agent_policy.get("auto_assign_copilot", False)
+            )
+        )
+        if assign and (created.get("number") or self.github_client.dry_run):
+            created["assigned"] = self.github_client.assign_issue_to_copilot(
+                created.get("number", 0),
+                "Respect repository architecture, make the smallest reasonable change, "
+                "run the validation commands, create a PR, and never merge or deploy.",
+            )
+            record_telemetry(
+                AgentTelemetryRecord(
+                    agent=proposal.source_agent,
+                    event=(
+                        "copilot_assignment_succeeded"
+                        if created["assigned"]
+                        else "copilot_assignment_failed"
+                    ),
+                    confidence=proposal.confidence,
+                    finding_type=proposal.finding_type,
+                    issue_number=created.get("number"),
+                    issue_url=created.get("url"),
+                    issue_fingerprint=proposal.fingerprint(),
+                )
+            )
+        record_telemetry(
+            AgentTelemetryRecord(
+                agent=proposal.source_agent,
+                event="issue_created",
+                confidence=proposal.confidence,
+                finding_type=proposal.finding_type,
+                issue_number=created.get("number"),
+                issue_url=created.get("url"),
+                issue_fingerprint=proposal.fingerprint(),
+                associated_pull_request=proposal.original_pull_request,
+            )
+        )
+        return created
 
     @staticmethod
     def _format_pr_comment(agent_name: str, result: AgentResult) -> str:

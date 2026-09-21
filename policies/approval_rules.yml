@@ -30,3 +30,22 @@ auto_approved:
 # itself cannot be merged without a human, per merge_pull_request above.
 auto_approved_with_review:
   - create_pull_request
+
+issue_policy:
+  minimum_confidence: 0.80
+  agents:
+    test_quality_agent:
+      create_issue: true
+      auto_assign_copilot: true
+    failure_analysis_agent:
+      create_issue: true
+      auto_assign_copilot: true
+    supply_chain_agent:
+      create_issue: true
+      auto_assign_copilot: true
+    merge_conflict_agent:
+      create_issue: true
+      auto_assign_copilot: false
+    pipeline_optimizer_agent:
+      create_issue: true
+      auto_assign_copilot: false
