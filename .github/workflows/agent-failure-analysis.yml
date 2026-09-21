@@ -55,16 +55,6 @@ jobs:
           done
           ollama pull qwen2.5-coder:3b
 
-      - name: Download CI test report
-        if: github.event_name == 'workflow_run'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: test-results
-          path: /tmp
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
-        continue-on-error: true
-
       - name: Collect failure context
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
