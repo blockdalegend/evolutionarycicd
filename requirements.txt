@@ -17,6 +17,7 @@ pytest-cov==5.0.0
 coverage==7.6.1
 ruff==0.6.9
 mypy==1.11.2
+types-requests==2.33.0.20260906
 
 # Security
 bandit==1.7.10
