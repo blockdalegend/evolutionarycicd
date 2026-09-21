@@ -16,6 +16,8 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+import requests
+
 from telemetry.logger import get_logger
 
 logger = get_logger(__name__)
@@ -48,6 +50,7 @@ class GitHubClient:
 
     def __init__(self, token: str | None = None, repository: str | None = None) -> None:
         self.token = token if token is not None else os.environ.get("GITHUB_TOKEN", "")
+        self.copilot_token = os.environ.get("COPILOT_TOKEN", self.token)
         self.repository = repository or os.environ.get("GITHUB_REPOSITORY", "")
         self.dry_run = _is_dry_run()
         self._gh: Any = None
@@ -191,20 +194,54 @@ class GitHubClient:
                 "WOULD ASSIGN COPILOT",
                 extra={"extra_fields": {"issue": number, "instructions": instructions or ""}},
             )
-            return {"assigned": True, "assignee": "copilot-swe-agent", "dry_run": True}
-        issue = self.get_issue(number)
-        if issue is None:
-            return {"assigned": False, "error": "issue could not be fetched"}
+            return {"assigned": True, "assignee": "copilot-swe-agent[bot]", "dry_run": True}
+        if not self.copilot_token or not self.repository:
+            return {"assigned": False, "error": "missing Copilot token or repository"}
+        url = f"https://api.github.com/repos/{self.repository}/issues/{number}/assignees"
+        payload = {
+            "assignees": ["copilot-swe-agent[bot]"],
+            "agent_assignment": {
+                "target_repo": self.repository,
+                "base_branch": "main",
+                "custom_instructions": instructions or "",
+                "custom_agent": "",
+                "model": "",
+            },
+        }
         try:
-            if instructions:
-                issue.create_comment(instructions)
-            issue.add_to_assignees("copilot-swe-agent")
-            return {"assigned": True, "assignee": "copilot-swe-agent"}
+            response = requests.post(
+                url,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {self.copilot_token}",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                json=payload,
+                timeout=30,
+            )
+            if response.status_code != 201:
+                return {
+                    "assigned": False,
+                    "assignee": "copilot-swe-agent[bot]",
+                    "error": f"GitHub API {response.status_code}: {response.text[:500]}",
+                }
+            assignees = response.json().get("assignees", [])
+            assigned_logins = {assignee.get("login") for assignee in assignees}
+            if "copilot-swe-agent" not in assigned_logins:
+                return {
+                    "assigned": False,
+                    "assignee": "copilot-swe-agent[bot]",
+                    "error": (
+                        "GitHub accepted the request but did not return Copilot "
+                        "as an assignee"
+                    ),
+                }
+            return {"assigned": True, "assignee": "copilot-swe-agent[bot]"}
         except Exception as exc:  # pragma: no cover
             logger.warning("Failed to assign Copilot to issue #%s: %s", number, exc)
             return {
                 "assigned": False,
-                "assignee": "copilot-swe-agent",
+                "assignee": "copilot-swe-agent[bot]",
                 "error": str(exc),
             }
 

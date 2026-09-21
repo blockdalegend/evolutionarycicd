@@ -80,6 +80,7 @@ jobs:
       - name: Run Failure Analysis Agent
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_TOKEN: ${{ secrets.COPILOT_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
           AGENT_DRY_RUN: ${{ vars.AGENT_DRY_RUN || 'true' }}

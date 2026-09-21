@@ -60,6 +60,7 @@ jobs:
       - name: Run Merge Conflict Agent
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_TOKEN: ${{ secrets.COPILOT_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           AGENT_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
           AGENT_DRY_RUN: ${{ vars.AGENT_DRY_RUN || 'true' }}

@@ -148,33 +148,32 @@ def test_dry_run_issue_and_copilot_assignment_are_write_free() -> None:
 
 
 def test_copilot_assignment_result_reports_success(monkeypatch) -> None:
-    class FakeIssue:
-        def create_comment(self, body: str) -> None:
-            pass
+    class FakeResponse:
+        status_code = 201
+        text = ""
 
-        def add_to_assignees(self, assignee: str) -> None:
-            assert assignee == "copilot-swe-agent"
+        def json(self) -> dict[str, list[dict[str, str]]]:
+            return {"assignees": [{"login": "copilot-swe-agent"}]}
 
     client = GitHubClient(token="token", repository="owner/repo")
     client.dry_run = False
-    monkeypatch.setattr(client, "get_issue", lambda number: FakeIssue())
+    monkeypatch.setattr("tools.github.client.requests.post", lambda *args, **kwargs: FakeResponse())
 
     result = client.assign_issue_to_copilot_result(9, "instructions")
 
-    assert result == {"assigned": True, "assignee": "copilot-swe-agent"}
+    assert result == {"assigned": True, "assignee": "copilot-swe-agent[bot]"}
 
 
 def test_copilot_assignment_result_reports_api_failure(monkeypatch) -> None:
-    class FakeIssue:
-        def add_to_assignees(self, assignee: str) -> None:
-            raise RuntimeError("permission denied")
-
     client = GitHubClient(token="token", repository="owner/repo")
     client.dry_run = False
-    monkeypatch.setattr(client, "get_issue", lambda number: FakeIssue())
+    monkeypatch.setattr(
+        "tools.github.client.requests.post",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("permission denied")),
+    )
 
     result = client.assign_issue_to_copilot_result(9)
 
     assert result["assigned"] is False
-    assert result["assignee"] == "copilot-swe-agent"
+    assert result["assignee"] == "copilot-swe-agent[bot]"
     assert result["error"] == "permission denied"
