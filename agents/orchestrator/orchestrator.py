@@ -122,7 +122,8 @@ class AgentOrchestrator:
         policy = self.approval_rules.get("issue_policy", {})
         minimum = float(policy.get("minimum_confidence", 0.8))
         agent_policy = self.permissions.get(proposal.source_agent, {})
-        if proposal.confidence < minimum or not agent_policy.get("create_issue", False):
+        issue_agent_policy = policy.get("agents", {}).get(proposal.source_agent, agent_policy)
+        if proposal.confidence < minimum or not issue_agent_policy.get("create_issue", False):
             record_telemetry(
                 AgentTelemetryRecord(
                     agent=proposal.source_agent,
@@ -136,7 +137,12 @@ class AgentOrchestrator:
             )
             logger.info(
                 "issue proposal withheld",
-                extra={"extra_fields": {"agent": proposal.source_agent, "confidence": proposal.confidence}},
+                extra={
+                    "extra_fields": {
+                        "agent": proposal.source_agent,
+                        "confidence": proposal.confidence,
+                    }
+                },
             )
             return {"created": False, "reason": "policy or confidence threshold"}
         existing = self.github_client.find_existing_issue(proposal.fingerprint())
@@ -171,11 +177,13 @@ class AgentOrchestrator:
             )
             return created
         assign = proposal.assign_to_copilot and bool(
-            agent_policy.get("assign_copilot", agent_policy.get("auto_assign_copilot", False))
+            issue_agent_policy.get(
+                "assign_copilot", issue_agent_policy.get("auto_assign_copilot", False)
+            )
         )
-        if assign and created.get("number"):
+        if assign and (created.get("number") or self.github_client.dry_run):
             created["assigned"] = self.github_client.assign_issue_to_copilot(
-                created["number"],
+                created.get("number", 0),
                 "Respect repository architecture, make the smallest reasonable change, "
                 "run the validation commands, create a PR, and never merge or deploy.",
             )

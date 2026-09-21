@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from agents.base import AgentContext, AgentDecision
+from agents.base import AgentContext
 from agents.issue_proposals import IssueProposal
+from agents.orchestrator.orchestrator import AgentOrchestrator
+from tools.github.client import GitHubClient
 
 
 def test_issue_proposal_is_stable_and_rendered_as_a_work_order() -> None:
@@ -53,3 +55,39 @@ def test_agent_run_attaches_issue_proposal_without_executing_remediation() -> No
     )
     assert result.success
     assert result.artifacts["issue_proposal"]["source_agent"] == "failure_analysis_agent"
+
+
+def _proposal(confidence: float = 0.9) -> IssueProposal:
+    return IssueProposal(
+        title="Actionable finding",
+        summary="A concrete finding",
+        problem="A concrete problem",
+        requested_change="Make the bounded change",
+        source_agent="test_quality_agent",
+        confidence=confidence,
+    )
+
+
+def test_policy_threshold_withholds_low_confidence_issue() -> None:
+    orchestrator = AgentOrchestrator(
+        github_client=GitHubClient(),
+        permissions={"test_quality_agent": {"create_issue": True}},
+        approval_rules={"issue_policy": {"minimum_confidence": 0.8}},
+    )
+    assert orchestrator.handle_issue_proposal(_proposal(0.79))["created"] is False
+
+
+def test_dry_run_issue_and_copilot_assignment_are_write_free() -> None:
+    client = GitHubClient(token="", repository="")
+    orchestrator = AgentOrchestrator(
+        github_client=client,
+        permissions={"test_quality_agent": {"create_issue": True, "assign_copilot": True}},
+        approval_rules={
+            "issue_policy": {
+                "minimum_confidence": 0.8,
+                "agents": {"test_quality_agent": {"create_issue": True, "assign_copilot": True}},
+            }
+        },
+    )
+    result = orchestrator.handle_issue_proposal(_proposal())
+    assert result["dry_run"] is True

@@ -21,12 +21,12 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from agents.issue_proposals import proposal_from_decision
 from llm.client import LLMClient
 from llm.models import LLMMessage, LLMRequest
 from telemetry.logger import get_logger
 from telemetry.models import AgentTelemetryRecord
 from telemetry.store import record_telemetry
-from agents.issue_proposals import proposal_from_decision
 
 logger = get_logger(__name__)
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"

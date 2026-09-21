@@ -47,9 +47,13 @@ class IssueProposal(BaseModel):
     def render_markdown(self) -> str:
         """Render a deterministic, implementation-oriented issue body."""
         def bullets(values: list[str]) -> str:
-            return "\n".join(f"- [ ] {value}" for value in values) or "- [ ] Complete the requested change"
+            return "\n".join(f"- [ ] {value}" for value in values) or (
+                "- [ ] Complete the requested change"
+            )
 
-        evidence = "\n".join(f"- {value}" for value in self.evidence) or "- Evidence was not supplied"
+        evidence = "\n".join(f"- {value}" for value in self.evidence) or (
+            "- Evidence was not supplied"
+        )
         files = "\n".join(f"- `{value}`" for value in self.affected_files) or "- None identified"
         commands = "\n".join(f"`{value}`" for value in self.validation_commands) or "`pytest`"
         assignment = (
@@ -148,13 +152,18 @@ def proposal_from_decision(
         affected_files=files[:20],
         requested_change=reason,
         acceptance_criteria=["Implement the requested change", "Existing tests continue to pass"],
-        validation_commands=["pytest", "ruff check .", "mypy app agents tools llm telemetry scripts"],
+        validation_commands=[
+            "pytest",
+            "ruff check .",
+            "mypy app agents tools llm telemetry scripts",
+        ],
         labels=["agent-recommendation"],
         source_agent=source_agent,
         confidence=confidence,
         original_pull_request=getattr(context, "pull_request_number", None),
         commit_sha=getattr(context, "commit_sha", None),
-        assign_to_copilot=source_agent in {"test_quality_agent", "failure_analysis_agent", "supply_chain_agent"},
+        assign_to_copilot=source_agent
+        in {"test_quality_agent", "failure_analysis_agent", "supply_chain_agent"},
         requires_human_review=True,
         finding_type=action,
     )
