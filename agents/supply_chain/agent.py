@@ -292,6 +292,15 @@ class SupplyChainAgent(BaseAgent):
             ["comment_pull_request", "create_pull_request"],
             preserve_argument_keys=("proposed_changes",),
         )
+        if issues and (
+            decision.action == "no_action" or decision.confidence < fallback.confidence
+        ):
+            decision = fallback.model_copy(
+                update={
+                    "reason": decision.reason,
+                    "arguments": decision.arguments,
+                }
+            )
         try:
             proposed_changes = self._validate_proposed_changes(
                 decision.arguments.get("proposed_changes", []), observation

@@ -60,6 +60,40 @@ def test_reason_preserves_deterministic_finding_details(monkeypatch) -> None:
     assert "Zizmor scan status: completed" in decision.reason
 
 
+def test_deterministic_findings_cannot_be_withheld_by_low_llm_confidence(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "agents.base.LLMClient.complete",
+        lambda _client, _request: LLMResponse(
+            success=True,
+            parsed={
+                "action": "report_supply_chain_findings",
+                "reason": "The scanner found a vulnerable dependency.",
+                "tool": "comment_pull_request",
+                "arguments": {},
+                "confidence": 0.4,
+                "requires_approval": False,
+            },
+        ),
+    )
+    context = AgentContext(
+        security_findings={
+            "pip_audit": [
+                {
+                    "name": "example-package",
+                    "version": "1.0.0",
+                    "vulns": [{"id": "GHSA-example"}],
+                }
+            ],
+            "github_actions_scan_status": "completed",
+        }
+    )
+
+    decision = SupplyChainAgent().reason(context, SupplyChainAgent().observe(context))
+
+    assert decision.action == "report_supply_chain_findings"
+    assert decision.confidence == 0.8
+
+
 def test_render_scanner_details_preserves_vulnerability_evidence() -> None:
     observation = {
         "pip_audit_findings": [
