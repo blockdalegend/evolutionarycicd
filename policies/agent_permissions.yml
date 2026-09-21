@@ -55,6 +55,6 @@ pipeline_optimizer_agent:
   propose_workflow_change: true
   modify_workflow: false
   create_issue: true
-  assign_copilot: false
+  assign_copilot: true
   merge_pull_request: false
   deploy: false

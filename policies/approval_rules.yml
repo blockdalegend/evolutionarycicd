@@ -50,4 +50,4 @@ issue_policy:
       auto_assign_copilot: false
     pipeline_optimizer_agent:
       create_issue: true
-      auto_assign_copilot: false
+      auto_assign_copilot: true

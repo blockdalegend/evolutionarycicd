@@ -125,6 +125,11 @@ class AgentOrchestrator:
         minimum = float(policy.get("minimum_confidence", 0.8))
         agent_policy = self.permissions.get(proposal.source_agent, {})
         issue_agent_policy = policy.get("agents", {}).get(proposal.source_agent, agent_policy)
+        assign = proposal.assign_to_copilot and bool(
+            issue_agent_policy.get(
+                "assign_copilot", issue_agent_policy.get("auto_assign_copilot", False)
+            )
+        )
         if proposal.confidence < minimum or not issue_agent_policy.get("create_issue", False):
             record_telemetry(
                 AgentTelemetryRecord(
@@ -150,6 +155,12 @@ class AgentOrchestrator:
         existing = self.github_client.find_existing_issue(proposal.fingerprint())
         if existing:
             self.github_client.comment_on_issue(existing["number"], proposal.render_markdown())
+            if assign:
+                existing["assigned"] = self.github_client.assign_issue_to_copilot(
+                    existing["number"],
+                    "Respect repository architecture, make the smallest reasonable change, "
+                    "run the validation commands, create a PR, and never merge or deploy.",
+                )
             record_telemetry(
                 AgentTelemetryRecord(
                     agent=proposal.source_agent,
@@ -178,11 +189,6 @@ class AgentOrchestrator:
                 )
             )
             return created
-        assign = proposal.assign_to_copilot and bool(
-            issue_agent_policy.get(
-                "assign_copilot", issue_agent_policy.get("auto_assign_copilot", False)
-            )
-        )
         if assign and (created.get("number") or self.github_client.dry_run):
             created["assigned"] = self.github_client.assign_issue_to_copilot(
                 created.get("number", 0),

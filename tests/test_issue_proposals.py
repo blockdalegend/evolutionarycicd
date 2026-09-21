@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agents.base import AgentContext
-from agents.issue_proposals import IssueProposal
+from agents.base import AgentContext, AgentDecision
+from agents.issue_proposals import IssueProposal, proposal_from_decision
 from agents.orchestrator.orchestrator import AgentOrchestrator
 from tools.github.client import GitHubClient
 
@@ -55,6 +55,23 @@ def test_agent_run_attaches_issue_proposal_without_executing_remediation() -> No
     )
     assert result.success
     assert result.artifacts["issue_proposal"]["source_agent"] == "failure_analysis_agent"
+
+
+def test_pipeline_optimizer_proposal_requests_copilot_assignment() -> None:
+    proposal = proposal_from_decision(
+        "pipeline_optimizer_agent",
+        AgentContext(),
+        {"runs": [{"workflow": "ci", "status": "failure"}]},
+        AgentDecision(
+            action="recommend_pipeline_improvements",
+            reason="The CI workflow has a recurring failure pattern.",
+            confidence=0.8,
+            requires_approval=True,
+        ),
+    )
+
+    assert proposal is not None
+    assert proposal.assign_to_copilot is True
 
 
 def _proposal(confidence: float = 0.9) -> IssueProposal:

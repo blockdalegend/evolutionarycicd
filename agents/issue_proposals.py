@@ -163,7 +163,12 @@ def proposal_from_decision(
         original_pull_request=getattr(context, "pull_request_number", None),
         commit_sha=getattr(context, "commit_sha", None),
         assign_to_copilot=source_agent
-        in {"test_quality_agent", "failure_analysis_agent", "supply_chain_agent"},
+        in {
+            "test_quality_agent",
+            "failure_analysis_agent",
+            "supply_chain_agent",
+            "pipeline_optimizer_agent",
+        },
         requires_human_review=True,
         finding_type=action,
     )
