@@ -1,6 +1,12 @@
 name: Agent - Failure Analysis
 
 on:
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: "Pull request number to analyze"
+        required: true
+        type: number
   workflow_run:
     workflows: ["CI"]
     types: [completed]
@@ -13,7 +19,9 @@ permissions:
 
 jobs:
   failure-analysis-agent:
-    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.pull_requests[0]
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.pull_requests)
     runs-on: ubuntu-latest
     concurrency:
       group: failure-analysis-${{ github.event.workflow_run.id }}
@@ -65,6 +73,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
+          AGENT_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number || '' }}
           AGENT_ARTIFACT_DIR: /tmp
         run: python scripts/collect_pipeline_context.py > /tmp/context.json
 

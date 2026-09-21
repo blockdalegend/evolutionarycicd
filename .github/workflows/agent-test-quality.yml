@@ -1,6 +1,12 @@
 name: Agent - Test Quality
 
 on:
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: "Pull request number to analyze"
+        required: true
+        type: number
   workflow_run:
     workflows: ["CI"]
     types: [completed]
@@ -17,9 +23,10 @@ jobs:
       group: test-quality-${{ github.event.workflow_run.id }}
       cancel-in-progress: true
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.pull_requests[0]
+      github.event.workflow_run.pull_requests)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,6 +69,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
+          AGENT_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number || '' }}
           AGENT_ARTIFACT_DIR: ${{ github.workspace }}
         run: python scripts/collect_pipeline_context.py > /tmp/context.json
 
