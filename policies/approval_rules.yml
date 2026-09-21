@@ -32,7 +32,9 @@ auto_approved_with_review:
   - create_pull_request
 
 issue_policy:
-  minimum_confidence: 0.80
+  # Allow well-supported findings whose model confidence is just below 0.80;
+  # issue creation still requires the per-agent policy below and human review.
+  minimum_confidence: 0.75
   agents:
     test_quality_agent:
       create_issue: true

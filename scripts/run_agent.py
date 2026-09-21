@@ -57,6 +57,9 @@ def main() -> int:
 
     print(f"success={result.success}")
     print(result.message)
+    issue_result = result.artifacts.get("issue_result")
+    if issue_result is not None:
+        print(f"issue_result={json.dumps(issue_result, sort_keys=True)}")
 
     return 0 if result.success else 1
 

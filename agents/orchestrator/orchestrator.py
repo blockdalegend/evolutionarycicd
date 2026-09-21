@@ -108,9 +108,11 @@ class AgentOrchestrator:
 
         result = agent.run(context, policy_check=policy_check)
 
+        issue_result: dict[str, Any] | None = None
         proposal_data = result.artifacts.get("issue_proposal")
         if proposal_data:
-            self.handle_issue_proposal(IssueProposal.model_validate(proposal_data))
+            issue_result = self.handle_issue_proposal(IssueProposal.model_validate(proposal_data))
+            result.artifacts["issue_result"] = issue_result
 
         if context.pull_request_number is not None:
             comment = self._format_pr_comment(agent.name, result)

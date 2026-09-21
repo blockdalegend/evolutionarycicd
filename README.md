@@ -140,7 +140,8 @@ make agent-optimize     # run the Pipeline Optimizer Agent locally (dry-run)
 ```
 
 To enable real GitHub comments/issues after testing in dry-run mode, set the
-repository variable `AGENT_DRY_RUN` to `false`. The workflows require the
+repository Actions variable `AGENT_DRY_RUN` to `false` under **Settings >
+Secrets and variables > Actions > Variables**. The workflows require the
 permissions declared in each workflow file; no workflow automatically merges
 or deploys changes.
 
