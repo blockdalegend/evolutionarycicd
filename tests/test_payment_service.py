@@ -59,9 +59,18 @@ def test_validate_payment_rejects_negative_amount(service: PaymentService) -> No
     assert result.reason == "amount cannot be negative"
 
 
-# NOTE(demo): the zero-dollar transaction branch and the gift-card limit
-# branch in PaymentService.validate_payment are intentionally left without
-# direct tests here so the Test Quality Agent has real gaps to identify.
+def test_validate_payment_approves_zero_amount(service: PaymentService) -> None:
+    method = PaymentMethod(type=PaymentMethodType.CREDIT_CARD, token="tok_123")
+    result = service.validate_payment(method, 0.0)
+    assert result.approved is True
+    assert result.reason == "zero-amount transaction"
+
+
+def test_validate_payment_rejects_gift_card_above_limit(service: PaymentService) -> None:
+    method = PaymentMethod(type=PaymentMethodType.GIFT_CARD, token="gift_123")
+    result = service.validate_payment(method, 500.01)
+    assert result.approved is False
+    assert result.reason == "gift card amount exceeds limit of 500.0"
 
 
 def test_calculate_refund(service: PaymentService) -> None:
