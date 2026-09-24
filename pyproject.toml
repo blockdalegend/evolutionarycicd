@@ -44,5 +44,5 @@ show_missing = true
 skip_empty = true
 
 [build-system]
-requires = ["setuptools==68.2.2"]
+requires = ["setuptools==78.1.1"]
 build-backend = "setuptools.build_meta"

@@ -236,4 +236,4 @@ def test_build_system_dependency_is_exactly_pinned() -> None:
         (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
     )
 
-    assert pyproject["build-system"]["requires"] == ["setuptools==68.2.2"]
+    assert pyproject["build-system"]["requires"] == ["setuptools==78.1.1"]
