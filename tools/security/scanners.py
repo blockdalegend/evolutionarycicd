@@ -132,6 +132,7 @@ def find_unpinned_actions(workflows_dir: Path) -> list[str]:
             stripped = line.strip()
             if stripped.startswith("uses:"):
                 ref = stripped.split("uses:", 1)[1].strip()
+                ref = ref.split("#", 1)[0].strip()
                 # A pinned action reference looks like owner/repo@<40-char sha>
                 if "@" not in ref:
                     unpinned.append(f"{workflow_file.name}: {ref}")

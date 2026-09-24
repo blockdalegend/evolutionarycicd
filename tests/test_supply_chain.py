@@ -3,6 +3,7 @@ from __future__ import annotations
 from agents.base import AgentContext, AgentDecision
 from agents.supply_chain.agent import SupplyChainAgent
 from llm.models import LLMResponse
+from tools.security.scanners import find_unpinned_actions
 
 
 def test_observe_propagates_github_actions_scan_findings() -> None:
@@ -226,3 +227,31 @@ def test_fix_pr_requires_explicit_enablement(monkeypatch) -> None:
     assert result["created"] is False
     assert result["dry_run"] is True
     assert result["approval_required"] is True
+
+
+def test_find_unpinned_actions_ignores_inline_comments_after_sha(tmp_path) -> None:
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    workflow_file = workflows / "ci.yml"
+    workflow_file.write_text(
+        "steps:\n"
+        "  - name: Checkout\n"
+        "    uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4\n",
+        encoding="utf-8",
+    )
+
+    assert find_unpinned_actions(workflows) == []
+
+
+def test_find_unpinned_actions_still_reports_mutable_tags(tmp_path) -> None:
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    workflow_file = workflows / "ci.yml"
+    workflow_file.write_text(
+        "steps:\n"
+        "  - name: Checkout\n"
+        "    uses: actions/checkout@v4 # mutable tag\n",
+        encoding="utf-8",
+    )
+
+    assert find_unpinned_actions(workflows) == ["ci.yml: actions/checkout@v4"]
