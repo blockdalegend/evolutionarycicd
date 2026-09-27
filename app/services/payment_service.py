@@ -56,9 +56,6 @@ class PaymentService:
         * gift cards above :data:`GIFT_CARD_MAX_AMOUNT` are rejected
         * a zero-dollar amount is treated as a valid "no-op" payment
 
-        NOTE(demo): the zero-dollar branch below is intentionally left with
-        weaker test coverage so the Test Quality Agent has something
-        meaningful to flag during the live demo.
         """
         if method.expired:
             return PaymentResult(approved=False, reason="payment method expired")
