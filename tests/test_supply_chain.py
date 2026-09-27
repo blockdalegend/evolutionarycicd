@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import tomllib
+from pathlib import Path
+
 from agents.base import AgentContext, AgentDecision
 from agents.supply_chain.agent import SupplyChainAgent
 from llm.models import LLMResponse
@@ -227,6 +230,14 @@ def test_fix_pr_requires_explicit_enablement(monkeypatch) -> None:
     assert result["created"] is False
     assert result["dry_run"] is True
     assert result["approval_required"] is True
+
+
+def test_build_system_dependency_is_exactly_pinned() -> None:
+    pyproject = tomllib.loads(
+        (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    assert pyproject["build-system"]["requires"] == ["setuptools==78.1.1"]
 
 
 def test_find_unpinned_actions_ignores_inline_comments_after_sha(tmp_path) -> None:
