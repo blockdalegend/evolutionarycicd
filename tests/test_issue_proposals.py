@@ -72,6 +72,217 @@ def test_pipeline_optimizer_proposal_requests_copilot_assignment() -> None:
 
     assert proposal is not None
     assert proposal.assign_to_copilot is True
+    assert proposal.requested_change == (
+        "Review the pipeline findings below and derive a workflow-specific "
+        "remediation plan for each one before implementation:\n\n"
+        "- The CI workflow has a recurring failure pattern."
+    )
+
+
+def test_pipeline_optimizer_proposal_uses_structured_recommendations() -> None:
+    proposal = proposal_from_decision(
+        "pipeline_optimizer_agent",
+        AgentContext(),
+        {
+            "runs": [
+                {"workflow": "ci.yml", "status": "failure", "failed_stage": "pytest"},
+                {
+                    "workflow": "ci.yml",
+                    "status": "failure",
+                    "failed_stage": "dependency_install",
+                    "failure_reason": "dependency:requests_registry_timeout",
+                },
+                {"workflow": "agent-test-quality.yml", "status": "success"},
+            ]
+        },
+        AgentDecision(
+            action="recommend_pipeline_improvements",
+            reason=(
+                "Recurring failures need workflow-specific remediation.\n"
+                "Use the structured fixes."
+            ),
+            arguments={
+                "recommended_fixes": [
+                    {
+                        "recommendation": "Recurring dependency failure in ci.yml",
+                        "recommended_fix": "Add bounded retries and review dependency caching.",
+                    }
+                ]
+            },
+            confidence=0.8,
+            requires_approval=True,
+        ),
+    )
+
+    assert proposal is not None
+    assert "\n" not in proposal.title
+    assert proposal.summary == (
+        "The CI pipeline history includes 3 runs, with 1 success(es) and 2 failure(s)."
+    )
+    assert proposal.problem == proposal.summary
+    assert proposal.evidence == [
+        "Observed 3 pipeline runs: 1 success(es), 2 failure(s)",
+        "Workflows observed: agent-test-quality.yml (1 run), ci.yml (2 runs)",
+        "Failed stages: dependency_install (1), pytest (1)",
+        "Failure reasons: dependency:requests_registry_timeout (1)",
+    ]
+    assert proposal.affected_files == [
+        ".github/workflows/agent-test-quality.yml",
+        ".github/workflows/ci.yml",
+    ]
+    assert "Review and implement the evidence-backed pipeline recommendations below:" in (
+        proposal.requested_change
+    )
+    assert "Fix: Add bounded retries and review dependency caching." in proposal.requested_change
+
+
+def test_pipeline_optimizer_proposal_handles_incomplete_recommended_fixes() -> None:
+    proposal = proposal_from_decision(
+        "pipeline_optimizer_agent",
+        AgentContext(),
+        {"runs": [{"workflow": "ci.yml", "status": "failure"}]},
+        AgentDecision(
+            action="recommend_pipeline_improvements",
+            reason="Recurring failures need workflow-specific remediation.",
+            arguments={"recommended_fixes": [{"recommendation": "", "recommended_fix": ""}]},
+            confidence=0.8,
+            requires_approval=True,
+        ),
+    )
+
+    assert proposal is not None
+    assert proposal.summary == (
+        "The CI pipeline history includes 1 run, with 0 success(es) and 1 failure(s)."
+    )
+    assert proposal.problem == proposal.summary
+    assert proposal.requested_change == (
+        "Review the pipeline findings below and derive a workflow-specific "
+        "remediation plan for each one before implementation:\n\n"
+        "- Recurring failures need workflow-specific remediation."
+    )
+
+
+def test_pipeline_optimizer_proposal_ignores_invalid_runs_and_fix_items() -> None:
+    proposal = proposal_from_decision(
+        "pipeline_optimizer_agent",
+        AgentContext(),
+        {
+            "runs": [
+                {"workflow": "ci.yml", "status": "failure", "failed_stage": "pytest"},
+                "invalid-run",
+                {"workflow": "agent-test-quality.yml", "status": "success"},
+            ]
+        },
+        AgentDecision(
+            action="recommend_pipeline_improvements",
+            reason="Recurring failures need workflow-specific remediation.",
+            arguments={
+                "recommended_fixes": [
+                    "invalid-fix",
+                    {
+                        "recommendation": "Recurring pytest failures in ci.yml",
+                        "recommended_fix": "Investigate pytest logs and stabilize the flaky test.",
+                    },
+                ]
+            },
+            confidence=0.8,
+            requires_approval=True,
+        ),
+    )
+
+    assert proposal is not None
+    assert proposal.summary == (
+        "The CI pipeline history includes 2 runs, with 1 success(es) and 1 failure(s)."
+    )
+    assert proposal.problem == proposal.summary
+    assert proposal.evidence == [
+        "Observed 2 pipeline runs: 1 success(es), 1 failure(s)",
+        "Workflows observed: agent-test-quality.yml (1 run), ci.yml (1 run)",
+        "Failed stages: pytest (1)",
+    ]
+    assert "Fix: Investigate pytest logs and stabilize the flaky test." in proposal.requested_change
+
+
+def test_pipeline_optimizer_proposal_handles_non_list_recommended_fixes() -> None:
+    proposal = proposal_from_decision(
+        "pipeline_optimizer_agent",
+        AgentContext(),
+        {"runs": [{"workflow": "ci.yml", "status": "failure"}]},
+        AgentDecision(
+            action="recommend_pipeline_improvements",
+            reason="Recurring failures need workflow-specific remediation.",
+            arguments={"recommended_fixes": "invalid-fix-payload"},
+            confidence=0.8,
+            requires_approval=True,
+        ),
+    )
+
+    assert proposal is not None
+    assert proposal.summary == (
+        "The CI pipeline history includes 1 run, with 0 success(es) and 1 failure(s)."
+    )
+    assert proposal.problem == proposal.summary
+    assert proposal.requested_change == (
+        "Review the pipeline findings below and derive a workflow-specific "
+        "remediation plan for each one before implementation:\n\n"
+        "- Recurring failures need workflow-specific remediation."
+    )
+
+
+def test_pipeline_optimizer_proposal_handles_missing_runs_and_yaml_workflows() -> None:
+    proposal = proposal_from_decision(
+        "pipeline_optimizer_agent",
+        AgentContext(),
+        {},
+        AgentDecision(
+            action="recommend_pipeline_improvements",
+            reason="Recurring failures need workflow-specific remediation.",
+            arguments={"recommended_fixes": []},
+            confidence=0.8,
+            requires_approval=True,
+        ),
+    )
+    empty_runs = proposal_from_decision(
+        "pipeline_optimizer_agent",
+        AgentContext(),
+        {"runs": []},
+        AgentDecision(
+            action="recommend_pipeline_improvements",
+            reason="Recurring failures need workflow-specific remediation.",
+            arguments={"recommended_fixes": []},
+            confidence=0.8,
+            requires_approval=True,
+        ),
+    )
+    from_runs = proposal_from_decision(
+        "pipeline_optimizer_agent",
+        AgentContext(),
+        {"runs": [{"workflow": "ci.yaml", "status": "failure"}]},
+        AgentDecision(
+            action="recommend_pipeline_improvements",
+            reason="Recurring failures need workflow-specific remediation.",
+            arguments={"recommended_fixes": []},
+            confidence=0.8,
+            requires_approval=True,
+        ),
+    )
+
+    assert proposal is not None
+    assert proposal.summary == (
+        "The CI pipeline history reported actionable findings that require "
+        "workflow-specific remediation."
+    )
+    assert proposal.problem == proposal.summary
+    assert proposal.requested_change == (
+        "Review the pipeline findings below and derive a workflow-specific "
+        "remediation plan for each one before implementation:\n\n"
+        "- Recurring failures need workflow-specific remediation."
+    )
+    assert empty_runs is not None
+    assert empty_runs.summary == proposal.summary
+    assert empty_runs.problem == proposal.problem
+    assert from_runs is not None
+    assert from_runs.affected_files == [".github/workflows/ci.yaml"]
 
 
 def test_merge_conflict_proposal_requests_copilot_assignment() -> None:
