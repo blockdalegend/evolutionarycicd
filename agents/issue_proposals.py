@@ -201,6 +201,8 @@ def _pipeline_requested_change(recommended_fixes: list[dict[str, object]], reaso
         return reason
     items = []
     for item in recommended_fixes:
+        if not isinstance(item, dict):
+            continue
         recommendation = _one_line(item.get("recommendation", "")).rstrip(".")
         fix = _one_line(item.get("recommended_fix", ""))
         if recommendation and fix:
@@ -242,21 +244,14 @@ def proposal_from_decision(
         runs = observation.get("runs")
         recommended_fixes = arguments.get("recommended_fixes", [])
         if isinstance(runs, list):
-            evidence = _pipeline_workflow_evidence(runs)
+            valid_runs = [run for run in runs if isinstance(run, dict)]
+            evidence = _pipeline_workflow_evidence(valid_runs)
             if not files:
-                files = _pipeline_affected_files(runs)
-            success_count = sum(
-                1
-                for run in runs
-                if isinstance(run, dict) and run.get("status") == "success"
-            )
-            failure_count = sum(
-                1
-                for run in runs
-                if isinstance(run, dict) and run.get("status") == "failure"
-            )
+                files = _pipeline_affected_files(valid_runs)
+            success_count = sum(1 for run in valid_runs if run.get("status") == "success")
+            failure_count = sum(1 for run in valid_runs if run.get("status") == "failure")
             summary = (
-                f"The CI pipeline history includes {len(runs)} runs, with "
+                f"The CI pipeline history includes {len(valid_runs)} runs, with "
                 f"{success_count} success(es) and {failure_count} failure(s)."
             )
             requested_change = _pipeline_requested_change(recommended_fixes, reason)

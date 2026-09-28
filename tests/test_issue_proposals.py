@@ -145,11 +145,54 @@ def test_pipeline_optimizer_proposal_handles_incomplete_recommended_fixes() -> N
     )
 
     assert proposal is not None
+    assert proposal.summary == (
+        "The CI pipeline history includes 1 runs, with 0 success(es) and 1 failure(s)."
+    )
     assert proposal.requested_change == (
         "Review the pipeline findings below and derive a workflow-specific "
         "remediation plan for each one before implementation:\n\n"
         "- Recurring failures need workflow-specific remediation."
     )
+
+
+def test_pipeline_optimizer_proposal_ignores_invalid_runs_and_fix_items() -> None:
+    proposal = proposal_from_decision(
+        "pipeline_optimizer_agent",
+        AgentContext(),
+        {
+            "runs": [
+                {"workflow": "ci.yml", "status": "failure", "failed_stage": "pytest"},
+                "invalid-run",
+                {"workflow": "agent-test-quality.yml", "status": "success"},
+            ]
+        },
+        AgentDecision(
+            action="recommend_pipeline_improvements",
+            reason="Recurring failures need workflow-specific remediation.",
+            arguments={
+                "recommended_fixes": [
+                    "invalid-fix",
+                    {
+                        "recommendation": "Recurring pytest failures in ci.yml",
+                        "recommended_fix": "Investigate pytest logs and stabilize the flaky test.",
+                    },
+                ]
+            },
+            confidence=0.8,
+            requires_approval=True,
+        ),
+    )
+
+    assert proposal is not None
+    assert proposal.summary == (
+        "The CI pipeline history includes 2 runs, with 1 success(es) and 1 failure(s)."
+    )
+    assert proposal.evidence == [
+        "Observed 2 pipeline runs: 1 success(es), 1 failure(s)",
+        "Workflows observed: agent-test-quality.yml (1 run), ci.yml (1 run)",
+        "Failed stages: pytest (1)",
+    ]
+    assert "Fix: Investigate pytest logs and stabilize the flaky test." in proposal.requested_change
 
 
 def test_merge_conflict_proposal_requests_copilot_assignment() -> None:
