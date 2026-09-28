@@ -245,6 +245,11 @@ def proposal_from_decision(
     evidence_chars = 0
     if source_agent == "pipeline_optimizer_agent":
         recommended_fixes = arguments.get("recommended_fixes", [])
+        summary = (
+            "The CI pipeline history reported actionable findings that require "
+            "workflow-specific remediation."
+        )
+        problem = summary
         requested_change = _pipeline_requested_change(recommended_fixes, reason)
         runs = observation.get("runs")
         if isinstance(runs, list):

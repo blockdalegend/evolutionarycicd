@@ -218,6 +218,10 @@ def test_pipeline_optimizer_proposal_handles_non_list_recommended_fixes() -> Non
     )
 
     assert proposal is not None
+    assert proposal.summary == (
+        "The CI pipeline history includes 1 run, with 0 success(es) and 1 failure(s)."
+    )
+    assert proposal.problem == proposal.summary
     assert proposal.requested_change == (
         "Review the pipeline findings below and derive a workflow-specific "
         "remediation plan for each one before implementation:\n\n"
@@ -252,6 +256,11 @@ def test_pipeline_optimizer_proposal_handles_missing_runs_and_yaml_workflows() -
     )
 
     assert proposal is not None
+    assert proposal.summary == (
+        "The CI pipeline history reported actionable findings that require "
+        "workflow-specific remediation."
+    )
+    assert proposal.problem == proposal.summary
     assert proposal.requested_change == (
         "Review the pipeline findings below and derive a workflow-specific "
         "remediation plan for each one before implementation:\n\n"
