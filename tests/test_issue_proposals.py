@@ -152,7 +152,7 @@ def test_pipeline_optimizer_proposal_handles_incomplete_recommended_fixes() -> N
 
     assert proposal is not None
     assert proposal.summary == (
-        "The CI pipeline history includes 1 runs, with 0 success(es) and 1 failure(s)."
+        "The CI pipeline history includes 1 run, with 0 success(es) and 1 failure(s)."
     )
     assert proposal.problem == proposal.summary
     assert proposal.requested_change == (

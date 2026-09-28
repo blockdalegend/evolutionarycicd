@@ -252,7 +252,8 @@ def proposal_from_decision(
             success_count = sum(1 for run in valid_runs if run.get("status") == "success")
             failure_count = sum(1 for run in valid_runs if run.get("status") == "failure")
             summary = (
-                f"The CI pipeline history includes {len(valid_runs)} runs, with "
+                f"The CI pipeline history includes {len(valid_runs)} "
+                f"run{'s' if len(valid_runs) != 1 else ''}, with "
                 f"{success_count} success(es) and {failure_count} failure(s)."
             )
             problem = summary
