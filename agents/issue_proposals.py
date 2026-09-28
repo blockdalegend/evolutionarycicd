@@ -209,7 +209,11 @@ def _pipeline_requested_change(recommended_fixes: list[dict[str, object]], reaso
         "Review and implement the evidence-backed pipeline recommendations below:\n\n"
         + "\n".join(items)
         if items
-        else reason
+        else (
+            "Review the pipeline findings below and derive a workflow-specific "
+            "remediation plan for each one before implementation:\n\n"
+            f"- {_one_line(reason)}"
+        )
     )
 
 
