@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections import Counter
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field, field_validator
@@ -131,6 +132,87 @@ class EvolutionProposal(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+def _one_line(value: object) -> str:
+    """Collapse arbitrary text into a single title-safe line."""
+    return re.sub(r"\s+", " ", str(value)).strip()
+
+
+def _pipeline_workflow_evidence(runs: list[dict[str, object]]) -> list[str]:
+    """Summarize pipeline history without embedding the full raw telemetry blob."""
+    workflow_counts = Counter(
+        str(run.get("workflow", "unknown")) for run in runs if run.get("workflow")
+    )
+    failed_stage_counts = Counter(
+        str(run.get("failed_stage"))
+        for run in runs
+        if run.get("status") == "failure" and run.get("failed_stage")
+    )
+    failure_reason_counts = Counter(
+        str(run.get("failure_reason"))
+        for run in runs
+        if run.get("status") == "failure" and run.get("failure_reason")
+    )
+    success_count = sum(1 for run in runs if run.get("status") == "success")
+    failure_count = sum(1 for run in runs if run.get("status") == "failure")
+    evidence = [
+        (
+            f"Observed {len(runs)} pipeline runs: {success_count} success(es), "
+            f"{failure_count} failure(s)"
+        ),
+    ]
+    if workflow_counts:
+        evidence.append(
+            "Workflows observed: "
+            + ", ".join(
+                f"{workflow} ({count} run{'s' if count != 1 else ''})"
+                for workflow, count in sorted(workflow_counts.items())
+            )
+        )
+    if failed_stage_counts:
+        evidence.append(
+            "Failed stages: "
+            + ", ".join(
+                f"{stage} ({count})" for stage, count in sorted(failed_stage_counts.items())
+            )
+        )
+    if failure_reason_counts:
+        evidence.append(
+            "Failure reasons: "
+            + ", ".join(
+                f"{reason} ({count})" for reason, count in sorted(failure_reason_counts.items())
+            )
+        )
+    return evidence
+
+
+def _pipeline_affected_files(runs: list[dict[str, object]]) -> list[str]:
+    """Map observed workflow names to likely workflow files for review."""
+    files = {
+        f".github/workflows/{workflow}"
+        for workflow in (str(run.get("workflow", "")) for run in runs)
+        if workflow.endswith(".yml")
+    }
+    return sorted(files)
+
+
+def _pipeline_requested_change(recommended_fixes: list[dict[str, object]], reason: str) -> str:
+    """Render workflow recommendations as an actionable change request."""
+    if not recommended_fixes:
+        return reason
+    items = []
+    for item in recommended_fixes:
+        recommendation = _one_line(item.get("recommendation", "")).rstrip(".")
+        fix = _one_line(item.get("recommended_fix", ""))
+        if recommendation and fix:
+            items.append(f"- {recommendation}.\n  Fix: {fix}")
+    return (
+        "Review and implement the evidence-backed pipeline recommendations below:\n\n"
+        + "\n".join(items)
+        if items
+        else reason
+    )
+
+
 def proposal_from_decision(
     source_agent: str,
     context: object,
@@ -147,24 +229,53 @@ def proposal_from_decision(
     if not files:
         files = list(arguments.get("files", []) or [])
     reason = getattr(decision, "reason", "Actionable finding")
+    summary = reason
+    problem = reason
+    requested_change = reason
     evidence: list[str] = []
     evidence_chars = 0
-    for key, value in observation.items():
-        if key in {"repair_files", "test_sources", "diff"} or not value:
-            continue
-        item = f"{key}: {value}"
-        remaining = MAX_EVIDENCE_CHARS - evidence_chars
-        if remaining <= 0:
-            break
-        evidence.append(item[: min(MAX_EVIDENCE_VALUE_CHARS, remaining)])
-        evidence_chars += len(evidence[-1])
+    if source_agent == "pipeline_optimizer_agent":
+        runs = observation.get("runs")
+        recommended_fixes = arguments.get("recommended_fixes", [])
+        if isinstance(runs, list):
+            evidence = _pipeline_workflow_evidence(runs)
+            if not files:
+                files = _pipeline_affected_files(runs)
+            success_count = sum(
+                1
+                for run in runs
+                if isinstance(run, dict) and run.get("status") == "success"
+            )
+            failure_count = sum(
+                1
+                for run in runs
+                if isinstance(run, dict) and run.get("status") == "failure"
+            )
+            summary = (
+                f"The CI pipeline history includes {len(runs)} runs, with "
+                f"{success_count} success(es) and {failure_count} failure(s)."
+            )
+            requested_change = _pipeline_requested_change(recommended_fixes, reason)
+    if not evidence:
+        for key, value in observation.items():
+            if key in {"repair_files", "test_sources", "diff"} or not value:
+                continue
+            item = f"{key}: {value}"
+            remaining = MAX_EVIDENCE_CHARS - evidence_chars
+            if remaining <= 0:
+                break
+            evidence.append(item[: min(MAX_EVIDENCE_VALUE_CHARS, remaining)])
+            evidence_chars += len(evidence[-1])
     return IssueProposal(
-        title=f"[{source_agent.replace('_agent', '').replace('_', ' ').title()}] {reason[:100]}",
-        summary=reason,
-        problem=reason,
+        title=(
+            f"[{source_agent.replace('_agent', '').replace('_', ' ').title()}] "
+            f"{_one_line(reason)[:100]}"
+        ),
+        summary=summary,
+        problem=problem,
         evidence=evidence,
         affected_files=files[:20],
-        requested_change=reason,
+        requested_change=requested_change,
         acceptance_criteria=["Implement the requested change", "Existing tests continue to pass"],
         validation_commands=[
             "pytest",
