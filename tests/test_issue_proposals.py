@@ -203,6 +203,28 @@ def test_pipeline_optimizer_proposal_ignores_invalid_runs_and_fix_items() -> Non
     assert "Fix: Investigate pytest logs and stabilize the flaky test." in proposal.requested_change
 
 
+def test_pipeline_optimizer_proposal_handles_non_list_recommended_fixes() -> None:
+    proposal = proposal_from_decision(
+        "pipeline_optimizer_agent",
+        AgentContext(),
+        {"runs": [{"workflow": "ci.yml", "status": "failure"}]},
+        AgentDecision(
+            action="recommend_pipeline_improvements",
+            reason="Recurring failures need workflow-specific remediation.",
+            arguments={"recommended_fixes": "invalid-fix-payload"},
+            confidence=0.8,
+            requires_approval=True,
+        ),
+    )
+
+    assert proposal is not None
+    assert proposal.requested_change == (
+        "Review the pipeline findings below and derive a workflow-specific "
+        "remediation plan for each one before implementation:\n\n"
+        "- Recurring failures need workflow-specific remediation."
+    )
+
+
 def test_merge_conflict_proposal_requests_copilot_assignment() -> None:
     proposal = proposal_from_decision(
         "merge_conflict_agent",
