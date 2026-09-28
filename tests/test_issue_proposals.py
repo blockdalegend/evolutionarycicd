@@ -114,6 +114,7 @@ def test_pipeline_optimizer_proposal_uses_structured_recommendations() -> None:
     assert proposal.summary == (
         "The CI pipeline history includes 3 runs, with 1 success(es) and 2 failure(s)."
     )
+    assert proposal.problem == proposal.summary
     assert proposal.evidence == [
         "Observed 3 pipeline runs: 1 success(es), 2 failure(s)",
         "Workflows observed: agent-test-quality.yml (1 run), ci.yml (2 runs)",
@@ -148,6 +149,7 @@ def test_pipeline_optimizer_proposal_handles_incomplete_recommended_fixes() -> N
     assert proposal.summary == (
         "The CI pipeline history includes 1 runs, with 0 success(es) and 1 failure(s)."
     )
+    assert proposal.problem == proposal.summary
     assert proposal.requested_change == (
         "Review the pipeline findings below and derive a workflow-specific "
         "remediation plan for each one before implementation:\n\n"
@@ -187,6 +189,7 @@ def test_pipeline_optimizer_proposal_ignores_invalid_runs_and_fix_items() -> Non
     assert proposal.summary == (
         "The CI pipeline history includes 2 runs, with 1 success(es) and 1 failure(s)."
     )
+    assert proposal.problem == proposal.summary
     assert proposal.evidence == [
         "Observed 2 pipeline runs: 1 success(es), 1 failure(s)",
         "Workflows observed: agent-test-quality.yml (1 run), ci.yml (1 run)",

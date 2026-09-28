@@ -254,6 +254,7 @@ def proposal_from_decision(
                 f"The CI pipeline history includes {len(valid_runs)} runs, with "
                 f"{success_count} success(es) and {failure_count} failure(s)."
             )
+            problem = summary
             requested_change = _pipeline_requested_change(recommended_fixes, reason)
     if not evidence:
         for key, value in observation.items():
