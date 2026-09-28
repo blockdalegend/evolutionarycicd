@@ -72,6 +72,11 @@ def test_pipeline_optimizer_proposal_requests_copilot_assignment() -> None:
 
     assert proposal is not None
     assert proposal.assign_to_copilot is True
+    assert proposal.requested_change == (
+        "Review the pipeline findings below and derive a workflow-specific "
+        "remediation plan for each one before implementation:\n\n"
+        "- The CI workflow has a recurring failure pattern."
+    )
 
 
 def test_pipeline_optimizer_proposal_uses_structured_recommendations() -> None:

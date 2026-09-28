@@ -197,8 +197,13 @@ def _pipeline_affected_files(runs: list[dict[str, object]]) -> list[str]:
 
 def _pipeline_requested_change(recommended_fixes: list[dict[str, object]], reason: str) -> str:
     """Render workflow recommendations as an actionable change request."""
+    fallback = (
+        "Review the pipeline findings below and derive a workflow-specific "
+        "remediation plan for each one before implementation:\n\n"
+        f"- {_one_line(reason)}"
+    )
     if not recommended_fixes:
-        return reason
+        return fallback
     items = []
     for item in recommended_fixes:
         if not isinstance(item, dict):
@@ -211,11 +216,7 @@ def _pipeline_requested_change(recommended_fixes: list[dict[str, object]], reaso
         "Review and implement the evidence-backed pipeline recommendations below:\n\n"
         + "\n".join(items)
         if items
-        else (
-            "Review the pipeline findings below and derive a workflow-specific "
-            "remediation plan for each one before implementation:\n\n"
-            f"- {_one_line(reason)}"
-        )
+        else fallback
     )
 
 
