@@ -190,7 +190,7 @@ def _pipeline_affected_files(runs: list[dict[str, object]]) -> list[str]:
     files = {
         f".github/workflows/{workflow}"
         for workflow in (str(run.get("workflow", "")) for run in runs)
-        if workflow.endswith(".yml")
+        if workflow.endswith((".yml", ".yaml"))
     }
     return sorted(files)
 
@@ -244,8 +244,9 @@ def proposal_from_decision(
     evidence: list[str] = []
     evidence_chars = 0
     if source_agent == "pipeline_optimizer_agent":
-        runs = observation.get("runs")
         recommended_fixes = arguments.get("recommended_fixes", [])
+        requested_change = _pipeline_requested_change(recommended_fixes, reason)
+        runs = observation.get("runs")
         if isinstance(runs, list):
             valid_runs = [run for run in runs if isinstance(run, dict)]
             evidence = _pipeline_workflow_evidence(valid_runs)
@@ -259,7 +260,6 @@ def proposal_from_decision(
                 f"{success_count} success(es) and {failure_count} failure(s)."
             )
             problem = summary
-            requested_change = _pipeline_requested_change(recommended_fixes, reason)
     if not evidence:
         for key, value in observation.items():
             if key in {"repair_files", "test_sources", "diff"} or not value:
