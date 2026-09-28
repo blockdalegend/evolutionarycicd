@@ -242,6 +242,18 @@ def test_pipeline_optimizer_proposal_handles_missing_runs_and_yaml_workflows() -
             requires_approval=True,
         ),
     )
+    empty_runs = proposal_from_decision(
+        "pipeline_optimizer_agent",
+        AgentContext(),
+        {"runs": []},
+        AgentDecision(
+            action="recommend_pipeline_improvements",
+            reason="Recurring failures need workflow-specific remediation.",
+            arguments={"recommended_fixes": []},
+            confidence=0.8,
+            requires_approval=True,
+        ),
+    )
     from_runs = proposal_from_decision(
         "pipeline_optimizer_agent",
         AgentContext(),
@@ -266,6 +278,9 @@ def test_pipeline_optimizer_proposal_handles_missing_runs_and_yaml_workflows() -
         "remediation plan for each one before implementation:\n\n"
         "- Recurring failures need workflow-specific remediation."
     )
+    assert empty_runs is not None
+    assert empty_runs.summary == proposal.summary
+    assert empty_runs.problem == proposal.problem
     assert from_runs is not None
     assert from_runs.affected_files == [".github/workflows/ci.yaml"]
 
