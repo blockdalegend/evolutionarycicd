@@ -219,12 +219,21 @@ class PipelineOptimizerAgent(BaseAgent):
         recommendations: list[str] = []
         details: list[dict[str, str]] = []
 
-        def add(recommendation: str, recommended_fix: str) -> None:
+        def add(
+            recommendation: str,
+            recommended_fix: str,
+            category: Literal[
+                "repeated_failure", "flaky_test", "dependency", "performance", "retries"
+            ],
+            evidence: str,
+        ) -> None:
             recommendations.append(recommendation)
             details.append(
                 {
                     "recommendation": recommendation,
                     "recommended_fix": recommended_fix,
+                    "category": category,
+                    "evidence": evidence,
                 }
             )
 
@@ -254,6 +263,8 @@ class PipelineOptimizerAgent(BaseAgent):
                     f"Inspect the '{stage}' logs, reproduce the failure, and repair the "
                     "underlying check. Quarantine the stage only if the failure is confirmed "
                     "to be nondeterministic, with an owner and exit criteria.",
+                    "repeated_failure",
+                    f"'{workflow}' stage '{stage}' failed {count} times across the supplied runs.",
                 )
 
         for reason, count in failure_reason_counts.items():
@@ -264,6 +275,8 @@ class PipelineOptimizerAgent(BaseAgent):
                     f"Quarantine '{reason}' behind an explicit tracking issue, capture the "
                     "failure evidence, and replace external timing dependence with a "
                     "deterministic fixture or bounded retry before re-enabling it.",
+                    "flaky_test",
+                    f"Failure reason '{reason}' recurred {count} times.",
                 )
             elif count >= FLAKY_THRESHOLD and "dependency" in reason.lower():
                 add(
@@ -271,6 +284,8 @@ class PipelineOptimizerAgent(BaseAgent):
                     "investigate the upstream dependency.",
                     "Add dependency caching and a bounded retry for transient registry errors; "
                     "pin or mirror the affected dependency and alert on repeated failures.",
+                    "dependency",
+                    f"Dependency failure reason '{reason}' recurred {count} times.",
                 )
 
         for workflow, durations in durations_by_workflow.items():
@@ -286,6 +301,9 @@ class PipelineOptimizerAgent(BaseAgent):
                     f"Profile the slow '{workflow}' runs, cache dependency installation, and "
                     "split the slowest test group into parallel jobs with separate timing "
                     "budgets.",
+                    "performance",
+                    f"'{workflow}' had {len(slow_runs)} run(s) above "
+                    f"{avg * SLOW_RUN_MULTIPLIER:.0f}s ({avg:.0f}s mean).",
                 )
 
         for workflow, retries in retry_counts_by_workflow.items():
@@ -296,6 +314,9 @@ class PipelineOptimizerAgent(BaseAgent):
                     f"Review retry conditions in '{workflow}', retry only known transient "
                     "failures, cap attempts, and fail fast for deterministic test or lint "
                     "errors.",
+                    "retries",
+                    f"'{workflow}' averaged {mean(retries):.1f} retries "
+                    f"across {len(retries)} runs.",
                 )
 
         return details
