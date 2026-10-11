@@ -12,13 +12,17 @@ policy itself, only about dry-run safety.
 
 from __future__ import annotations
 
+import base64
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
 from telemetry.logger import get_logger
+from telemetry.models import KNOWN_AGENT_NAMES
 
 logger = get_logger(__name__)
 
@@ -61,6 +65,255 @@ class GitHubClient:
 
             self._gh = Github(self.token) if self.token else Github()
         return self._gh
+
+    def _api_get(self, path: str, params: dict[str, Any] | None = None) -> Any | None:
+        """Perform a bounded authenticated read from the GitHub REST API."""
+        if not self.token or not self.repository:
+            return None
+        url = (
+            path
+            if path.startswith("https://")
+            else f"https://api.github.com/repos/{self.repository}/{path.lstrip('/')}"
+        )
+        try:
+            response = requests.get(
+                url,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {self.token}",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                params=params,
+                timeout=30,
+            )
+            if response.status_code != 200:
+                logger.warning("GitHub API read failed (%s): %s", response.status_code, path)
+                return None
+            return response
+        except Exception as exc:  # pragma: no cover - network/library failure path
+            logger.warning("GitHub API read failed for %s: %s", path, exc)
+            return None
+
+    def list_workflow_runs(
+        self, per_page: int = 100, workflow: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return recent workflow-run metadata for historical analysis."""
+        endpoint = (
+            f"actions/workflows/{quote(workflow, safe='')}/runs" if workflow else "actions/runs"
+        )
+        response = self._api_get(endpoint, {"per_page": min(max(per_page, 1), 100)})
+        if response is None:
+            return []
+        try:
+            runs = response.json().get("workflow_runs", [])
+            return [run for run in runs if isinstance(run, dict)]
+        except (ValueError, AttributeError):
+            return []
+
+    def get_workflow_jobs(self, run_id: int) -> list[dict[str, Any]]:
+        """Return job timing metadata without inferring unreported CI stages."""
+        response = self._api_get(f"actions/runs/{run_id}/jobs", {"per_page": 100})
+        if response is None:
+            return []
+        try:
+            jobs = response.json().get("jobs", [])
+            return [job for job in jobs if isinstance(job, dict)]
+        except (ValueError, AttributeError):
+            return []
+
+    def list_run_artifacts(self, run_id: int) -> list[dict[str, Any]]:
+        """Return artifact metadata for a workflow run."""
+        response = self._api_get(f"actions/runs/{run_id}/artifacts", {"per_page": 100})
+        if response is None:
+            return []
+        try:
+            artifacts = response.json().get("artifacts", [])
+            return [artifact for artifact in artifacts if isinstance(artifact, dict)]
+        except (ValueError, AttributeError):
+            return []
+
+    def download_run_artifact(self, artifact_id: int, max_bytes: int = 20_000_000) -> bytes | None:
+        """Download a bounded artifact archive; callers must validate its contents."""
+        response = self._api_get(f"actions/artifacts/{artifact_id}/zip")
+        if response is None:
+            return None
+        content = response.content
+        if len(content) > max_bytes:
+            logger.warning("GitHub artifact %s exceeded the download size limit", artifact_id)
+            return None
+        return content
+
+    def get_file_contents(self, path: str, ref: str, max_bytes: int = 100_000) -> str | None:
+        """Read bounded UTF-8 repository content at an exact commit without executing it."""
+        encoded_path = quote(path, safe="/")
+        response = self._api_get(f"contents/{encoded_path}", {"ref": ref})
+        if response is None:
+            return None
+        try:
+            payload = response.json()
+            if payload.get("encoding") != "base64":
+                return None
+            if payload.get("size", 0) > max_bytes:
+                return None
+            content = base64.b64decode(payload.get("content", ""), validate=False)
+            if len(content) > max_bytes:
+                return None
+            return content.decode("utf-8")
+        except (ValueError, UnicodeDecodeError, AttributeError):
+            return None
+
+    def list_agent_issue_lifecycle(
+        self, workflow_runs: list[dict[str, Any]] | None = None
+    ) -> list[dict[str, Any]]:
+        """Reconcile agent issue markers with linked PR and CI outcomes."""
+        response = self._api_get(
+            "issues", {"state": "all", "per_page": 100, "sort": "created", "direction": "desc"}
+        )
+        if response is None:
+            return []
+        try:
+            issues = response.json()
+        except ValueError:
+            return []
+        if not isinstance(issues, list):
+            return []
+        runs = workflow_runs or []
+        outcomes: list[dict[str, Any]] = []
+        for issue in issues:
+            if not isinstance(issue, dict) or issue.get("pull_request"):
+                continue
+            body = issue.get("body") or ""
+            if not isinstance(body, str):
+                continue
+            agent_match = re.search(r"evolutionary-cicd:source-agent=([a-z0-9_]+)", body)
+            if agent_match is None or agent_match.group(1) not in KNOWN_AGENT_NAMES:
+                continue
+            number = issue.get("number")
+            if not isinstance(number, int):
+                continue
+            agent = agent_match.group(1)
+            fingerprint_match = re.search(r"evolutionary-cicd:fingerprint=([a-f0-9]+)", body)
+            base_record = {
+                "agent": agent,
+                "issue_number": number,
+                "issue_fingerprint": fingerprint_match.group(1) if fingerprint_match else None,
+                "issue_created_at": issue.get("created_at"),
+                "timestamp": issue.get("created_at"),
+                "issue_closed_at": issue.get("closed_at"),
+                "event": "issue_created",
+            }
+            outcomes.append(base_record)
+            raw_labels = issue.get("labels", [])
+            issue_labels = {
+                label.get("name")
+                for label in (raw_labels if isinstance(raw_labels, list) else [])
+                if isinstance(label, dict) and isinstance(label.get("name"), str)
+            }
+            if "agent-remediation-verified" in issue_labels:
+                outcomes.append(
+                    {
+                        **base_record,
+                        "event": "remediation_verified",
+                        "timestamp": issue.get("updated_at"),
+                    }
+                )
+            for label, result in (
+                ("agent-measured-target-met", "target_met"),
+                ("agent-measured-target-missed", "target_missed"),
+            ):
+                if label in issue_labels:
+                    outcomes.append(
+                        {
+                            **base_record,
+                            "event": "measured_outcome",
+                            "measured_outcome": result,
+                            "timestamp": issue.get("updated_at"),
+                        }
+                    )
+            timeline = self._api_get(f"issues/{number}/timeline")
+            linked_prs: set[int] = set()
+            merged_prs: set[int] = set()
+            if timeline is not None:
+                try:
+                    timeline_events = timeline.json()
+                except ValueError:
+                    timeline_events = []
+                if isinstance(timeline_events, list):
+                    for timeline_event in timeline_events:
+                        if (
+                            not isinstance(timeline_event, dict)
+                            or timeline_event.get("event") != "cross-referenced"
+                        ):
+                            continue
+                        source = timeline_event.get("source")
+                        if not isinstance(source, dict):
+                            continue
+                        source_issue = source.get("issue") or {}
+                        if not isinstance(source_issue, dict):
+                            continue
+                        source_number = source_issue.get("number")
+                        if isinstance(source_number, int) and source_issue.get("pull_request"):
+                            linked_prs.add(source_number)
+            for pull_number in sorted(linked_prs):
+                pull_response = self._api_get(f"pulls/{pull_number}")
+                if pull_response is None:
+                    continue
+                try:
+                    pull = pull_response.json()
+                except ValueError:
+                    continue
+                if not isinstance(pull, dict):
+                    continue
+                pr_record = {
+                    **base_record,
+                    "event": "issue_linked_pr",
+                    "associated_pull_request": pull_number,
+                    "pr_created_at": pull.get("created_at"),
+                    "pr_merged_at": pull.get("merged_at"),
+                    "timestamp": pull.get("created_at"),
+                }
+                outcomes.append(pr_record)
+                if pull.get("merged") is True:
+                    merged_prs.add(pull_number)
+                    outcomes.append(
+                        {
+                            **pr_record,
+                            "event": "pr_merged",
+                            "timestamp": pull.get("merged_at"),
+                        }
+                    )
+                matching_runs: list[dict[str, Any]] = []
+                for run in runs:
+                    pull_requests = run.get("pull_requests", []) if isinstance(run, dict) else []
+                    if (
+                        isinstance(run, dict)
+                        and isinstance(pull_requests, list)
+                        and any(
+                            isinstance(pr, dict) and pr.get("number") == pull_number
+                            for pr in pull_requests
+                        )
+                        and run.get("status") == "completed"
+                    ):
+                        matching_runs.append(run)
+                if matching_runs:
+                    latest = max(matching_runs, key=lambda run: str(run.get("updated_at", "")))
+                    outcomes.append(
+                        {
+                            **pr_record,
+                            "event": "pr_validation_result",
+                            "pr_validation_result": latest.get("conclusion", "unknown"),
+                            "timestamp": latest.get("updated_at"),
+                        }
+                    )
+            if issue.get("state") == "closed" and not merged_prs:
+                outcomes.append(
+                    {
+                        **base_record,
+                        "event": "issue_rejected",
+                        "timestamp": issue.get("closed_at"),
+                    }
+                )
+        return outcomes
 
     def get_pull_request(self, number: int) -> PullRequestInfo | None:
         """Fetch PR metadata, changed files, and diff. Returns ``None`` on failure."""
@@ -232,8 +485,7 @@ class GitHubClient:
                     "assigned": False,
                     "assignee": "copilot-swe-agent[bot]",
                     "error": (
-                        "GitHub accepted the request but did not return Copilot "
-                        "as an assignee"
+                        "GitHub accepted the request but did not return Copilot " "as an assignee"
                     ),
                 }
             return {"assigned": True, "assignee": "copilot-swe-agent[bot]"}

@@ -74,6 +74,44 @@ def test_pipeline_optimizer_proposal_requests_copilot_assignment() -> None:
     assert proposal.assign_to_copilot is True
 
 
+def test_agent_authored_issue_proposal_keeps_structured_evidence() -> None:
+    proposal = IssueProposal(
+        title="[Flaky Test] Stabilize test_payment_timeout",
+        summary="The test failed intermittently across historical runs.",
+        problem="test_payment_timeout failed in 7 of 30 runs but passed on retry.",
+        evidence=["Runs analyzed: 30", "Failures: 7", "Successful reruns: 6"],
+        affected_files=["tests/test_payment_service.py"],
+        requested_change=(
+            "Replace timing-sensitive waits with a deterministic synchronization point."
+        ),
+        acceptance_criteria=["The test passes without retry-based masking."],
+        validation_commands=["pytest tests/test_payment_service.py -q"],
+        labels=["agent-recommendation", "flaky-test"],
+        source_agent="flaky_test_agent",
+        confidence=0.9,
+        finding_type="intermittent_test_failure",
+    )
+    decision = AgentDecision(
+        action="report_flaky_test",
+        reason="test_payment_timeout failed intermittently across historical runs.",
+        arguments={"issue_proposal": proposal.model_dump(mode="json")},
+        confidence=0.9,
+    )
+
+    generated = proposal_from_decision(
+        "flaky_test_agent",
+        AgentContext(commit_sha="abc123"),
+        {"runs_analyzed": 30},
+        decision,
+    )
+
+    assert generated is not None
+    assert generated.title == proposal.title
+    assert generated.evidence == proposal.evidence
+    assert generated.acceptance_criteria == proposal.acceptance_criteria
+    assert generated.commit_sha == "abc123"
+
+
 def test_merge_conflict_proposal_requests_copilot_assignment() -> None:
     proposal = proposal_from_decision(
         "merge_conflict_agent",

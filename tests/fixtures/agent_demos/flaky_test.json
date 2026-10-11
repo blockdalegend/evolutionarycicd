@@ -1,0 +1,17 @@
+{
+  "test_history": [
+    {"run_id": "run-01", "cases": [{"test_id": "tests.test_payment_service::test_payment_timeout", "outcome": "failed", "failure_detail": "Timeout waiting for callback", "successful_rerun": false}]},
+    {"run_id": "run-02", "cases": [{"test_id": "tests.test_payment_service::test_payment_timeout", "outcome": "passed", "successful_rerun": false}]},
+    {"run_id": "run-03", "cases": [{"test_id": "tests.test_payment_service::test_payment_timeout", "outcome": "failed", "failure_detail": "Timeout waiting for callback", "successful_rerun": false}, {"test_id": "tests.test_payment_service::test_payment_timeout", "outcome": "passed", "successful_rerun": true}]},
+    {"run_id": "run-04", "cases": [{"test_id": "tests.test_payment_service::test_payment_timeout", "outcome": "passed", "successful_rerun": false}]},
+    {"run_id": "run-05", "cases": [{"test_id": "tests.test_payment_service::test_payment_timeout", "outcome": "passed", "successful_rerun": false}]},
+    {"run_id": "run-06", "cases": [{"test_id": "tests.test_payment_service::test_payment_timeout", "outcome": "failed", "failure_detail": "Temporary connection reset", "successful_rerun": false}, {"test_id": "tests.test_payment_service::test_payment_timeout", "outcome": "passed", "successful_rerun": true}]},
+    {"run_id": "run-07", "cases": [{"test_id": "tests.test_payment_service::test_payment_timeout", "outcome": "passed", "successful_rerun": false}]},
+    {"run_id": "run-08", "cases": [{"test_id": "tests.test_payment_service::test_payment_timeout", "outcome": "passed", "successful_rerun": false}]},
+    {"run_id": "run-09", "cases": [{"test_id": "tests.test_payment_service::test_payment_timeout", "outcome": "passed", "successful_rerun": false}]},
+    {"run_id": "run-10", "cases": [{"test_id": "tests.test_payment_service::test_payment_timeout", "outcome": "passed", "successful_rerun": false}]}
+  ],
+  "test_sources": {
+    "tests/test_payment_service.py": "def test_payment_timeout():\n    assert True\n"
+  }
+}

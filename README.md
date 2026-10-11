@@ -1,201 +1,170 @@
 # evolutionary-cicd
 
-### Conference talk: *"Evolutionary CI/CD: Building Intelligent Delivery Pipelines with AI Agents"*
+### Conference talk: *Evolutionary CI/CD: Building Intelligent Delivery Pipelines with AI Agents*
 
 > Traditional CI/CD executes workflows.
-> Agentic CI/CD reasons inside workflows.
-> Evolutionary CI/CD improves the workflows themselves.
+> Agentic CI/CD identifies problems and coordinates implementation.
+> Evolutionary CI/CD measures outcomes and improves future delivery decisions.
 
-This repository is a reference implementation for a conference demo showing
-the progression from traditional CI/CD, to AI-assisted CI/CD, to agentic
-CI/CD, and finally to **evolutionary CI/CD**: a system where AI agents
-observe pipeline history and recommend improvements to the delivery pipeline
-itself — always gated by explicit policy and human approval.
+This repository is a reference implementation for bounded, evidence-backed
+CI/CD agents. Agents create structured GitHub Issues through one shared
+orchestrator; policy may authorize Copilot Coding Agent to implement an issue
+and open a PR. GitHub Actions validates PRs, and humans retain merge and
+deployment authority.
 
-> **Disclaimer:** This is an educational / conference reference
-> implementation, not a production-grade platform. It intentionally favors
-> readability and live-demo reliability over enterprise scale.
-
-## Problem statement
-
-CI/CD pipelines execute the same deterministic steps forever, even when they
-are flaky, slow, or repeatedly failing for a known reason. This project asks:
-what if a pipeline could reason about its own test quality, its own supply
-chain risk, its own merge conflicts — and, over time, about its own
-history — while GitHub Actions remains firmly in control of execution?
+> **Disclaimer:** This is an educational conference reference implementation,
+> not a production-grade platform. It favors readability and repeatable demos.
 
 ## Maturity model
 
 | Stage | Behavior |
 |---|---|
-| **Traditional CI/CD** | Executes workflows: lint, test, build, deploy. |
-| **AI-assisted CI/CD** | Explains workflow output: summarizes failures, coverage gaps. |
-| **Agentic CI/CD** | Reasons and performs *bounded* actions inside workflows: proposes tests, resolves conflicts, validates its own output. |
-| **Evolutionary CI/CD** | Learns from historical pipeline telemetry and recommends changes to the workflows themselves — always requiring human approval. |
+| **Traditional CI/CD** | Executes predetermined lint, test, build, and deployment workflows. |
+| **Agentic CI/CD** | Specialized agents identify evidence-backed problems and coordinate bounded implementation through reviewed issues and pull requests. |
+| **Evolutionary CI/CD** | Measures remediation and delivery outcomes, then uses that evidence to improve future delivery decisions. |
 
-## Architecture overview
-
-See [`docs/architecture.md`](docs/architecture.md) for the full diagram and
-explanation. In short:
+## Architecture
 
 ```mermaid
 flowchart LR
-    PR[Pull Request] --> GHA[GitHub Actions]
-    GHA --> CI[Deterministic CI]
-    CI --> CTX[Context Builder]
-    CTX --> ORCH[Agent Orchestrator]
-    ORCH --> AGENT[Specialized Agent]
-    AGENT --> POLICY[Policy Engine]
-    POLICY --> TOOLS[Allowed Tools]
-    TOOLS --> OUT[PR Comment / Issue]
-    OUT --> TEL[Telemetry Store]
-    TEL --> OPT[Pipeline Optimizer]
+    GHA[GitHub Actions] --> AGENTS[Specialized Agents]
+    AGENTS --> EVIDENCE[Deterministic Evidence]
+    EVIDENCE --> POLICY[Shared Policy Engine]
+    POLICY --> ISSUES[GitHub Issues]
+    ISSUES --> COPILOT[Copilot Coding Agent]
+    COPILOT --> PR[Pull Request]
+    PR --> CI[CI Validation]
+    CI --> HUMAN[Human Review]
+    HUMAN --> TEL[Telemetry and GitHub Outcomes]
+    TEL --> FEEDBACK[Evolutionary Feedback]
+    FEEDBACK --> AGENTS
 ```
 
-Every agent follows the same lifecycle:
-
-```mermaid
-sequenceDiagram
-    participant O as Orchestrator
-    participant A as Agent
-    participant T as Tool
-    O->>A: run(context)
-    A->>A: observe -> reason
-    O->>O: check policy
-    A->>T: act
-    T-->>A: tool_result
-    A->>A: validate
-    A->>A: record telemetry
-    A-->>O: AgentResult
-```
-
-## Repository structure
-
-```
-app/            demo payment/order application (business logic under test)
-agents/         BaseAgent + one module per specialized agent + orchestrator
-tools/          the only things agents may invoke: GitHub API, git, pytest, scanners
-llm/            provider-neutral, OpenAI-compatible LLM client
-prompts/        system prompts for each agent (untrusted-input rules included)
-policies/       agent_permissions.yml (capability) + approval_rules.yml (authority)
-telemetry/      structured logging + append-only telemetry store
-scripts/        run_agent.py, collect_pipeline_context.py, seed_demo_history.py
-data/           seeded pipeline history + local telemetry (gitignored at runtime)
-docs/           architecture, agent model, security model, demo scenario
-.github/        GitHub Actions workflows + issue/PR templates
-```
+Every agent follows `observe -> reason -> act -> validate -> record`. The
+shared orchestrator applies confidence thresholds, stable fingerprints,
+deduplication, capability policy, and Copilot assignment authorization. No
+agent merges or deploys. See [docs/architecture.md](docs/architecture.md),
+[docs/agent-model.md](docs/agent-model.md), and
+[docs/security-model.md](docs/security-model.md).
 
 ## Agents
 
-| Agent | What it does | Can modify code? | Can merge/deploy? |
+| Agent | Purpose | Issue behavior | Copilot assignment |
 |---|---|---|---|
-| `test_quality_agent` | Reviews test quality beyond coverage, flags weak or missing behavioral tests, and can generate & run candidate tests | Yes (requires approval) | No |
-| `failure_analysis_agent` | Explains why CI failed and which files are likely at fault | No | No |
-| `merge_conflict_agent` | Proposes and validates a merge-conflict resolution | Yes (requires approval) | No |
-| `supply_chain_agent` | Summarizes dependency/action pinning and scanner findings | No | No |
-| `pipeline_optimizer_agent` | Learns from pipeline history; recommends workflow changes | No (never modifies workflows) | No |
+| `test_quality_agent` | Reviews test behavior, assertions, isolation, and coverage gaps | Detailed test-quality issue or PR feedback | Allowed by policy |
+| `failure_analysis_agent` | Diagnoses failed CI and likely affected files | Evidence-backed failure analysis issue | Allowed by policy |
+| `merge_conflict_agent` | Analyzes and validates merge-conflict resolutions | Proposes a reviewed resolution | Allowed by policy |
+| `supply_chain_agent` | Reviews dependency and workflow supply-chain evidence | Reports scanner and pinning findings | Allowed by policy |
+| `pipeline_optimizer_agent` | Analyzes historical pipeline telemetry | Recommends reviewed workflow improvements | Allowed by policy |
+| `flaky_test_agent` | Finds intermittent pytest failures and observed successful reruns | Reports stable test ID, frequency, retry evidence, and hypotheses | Allowed by policy |
+| `build_performance_agent` | Finds historical workflow/job duration regressions | Reports samples, baseline, recent duration, and measured optional metrics | Denied by policy |
+| `test_impact_agent` | Maps changed modules to direct/transitive tests | Advisory mapping and missing-test issues; never skips mandatory checks | Denied by policy |
+| `documentation_drift_agent` | Finds specific undocumented configuration, CLI, and public API changes | Evidence-backed documentation issue | Allowed by policy |
+| `agent_effectiveness_agent` | Evaluates issue, PR, merge, verification, and measured outcomes | Reports 90-day metrics and supported quality trends | Denied by policy |
 
-Full details: [`docs/agent-model.md`](docs/agent-model.md).
+Full triggers, data sources, permissions, examples, thresholds, and issue
+behavior are documented in [docs/agent-model.md](docs/agent-model.md).
 
-## Security model
-
-Least-privilege tokens, tool allowlisting, secret redaction, approval gates,
-and explicit prompt-injection defenses. See
-[`docs/security-model.md`](docs/security-model.md).
-
-**Capability != Authority**: `policies/agent_permissions.yml` says what an
-agent can *attempt*; `policies/approval_rules.yml` says what still needs a
-human before it takes effect.
-
-## Setup instructions
+## Setup
 
 ```bash
-git clone <this-repo>
-cd evolutionary-cicd
-cp .env.example .env   # fill in LLM_API_KEY etc. only if you want real LLM calls
+git clone https://github.com/blockdalegend/evolutionarycicd.git
+cd evolutionarycicd
+cp .env.example .env
 make install
 ```
 
-The agents use the configured OpenAI-compatible chat endpoint for structured
-reasoning. Set `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL` in `.env` for
-local runs, or configure `LLM_API_KEY` as a repository secret and the other
-settings as repository variables for GitHub Actions. For an Azure OpenAI or
-Microsoft Foundry v1 deployment, use
-`LLM_BASE_URL=https://<resource-name>.openai.azure.com/openai/v1`, set
-`LLM_MODEL` to the deployment name, and set `LLM_AUTH_MODE=api-key`.
-The trusted prompt files and policy allowlists remain in control of which
-tools an LLM decision may invoke.
+Python 3.12 is used by CI. Configure `LLM_API_KEY`, `LLM_BASE_URL`, and
+`LLM_MODEL` for the existing LLM-assisted agents. The five new agents use
+deterministic calculations and do not require an LLM.
 
 ## Local development
 
 ```bash
-make lint          # ruff
-make typecheck      # mypy
-make test           # pytest + coverage
-make security        # bandit + pip-audit
-make ci              # all of the above
-make demo-history     # seed data/pipeline_history.json with ~30 runs
-make agent-test        # run the Test Quality Agent locally (dry-run)
-make agent-optimize     # run the Pipeline Optimizer Agent locally (dry-run)
+make lint
+make typecheck
+make test
+make security
+make ci
 ```
 
-To enable real GitHub comments/issues after testing in dry-run mode, set the
-repository Actions variable `AGENT_DRY_RUN` to `false` under **Settings >
-Secrets and variables > Actions > Variables**. The workflows require the
-permissions declared in each workflow file; no workflow automatically merges
+Five deterministic, write-free demonstrations use checked-in fixture evidence:
+
+```bash
+make demo-flaky-test
+make demo-build-performance
+make demo-test-impact
+make demo-documentation-drift
+make demo-agent-effectiveness
+```
+
+Each prints the finding and proposed issue, whether policy permits Copilot
+assignment, and the simulated result. Demo commands force `AGENT_DRY_RUN=true`.
+See [docs/demo-scenario.md](docs/demo-scenario.md) for the walkthrough.
+
+Local live mode is separate and requires explicit authorization:
+
+```bash
+AGENT_ALLOW_LIVE=true GITHUB_TOKEN=<scoped-token> GITHUB_REPOSITORY=owner/repo \
+  python scripts/run_agent.py --agent flaky_test \
+  --context-file tests/fixtures/agent_demos/flaky_test.json --live
+```
+
+`--live` requires `AGENT_ALLOW_LIVE=true`, a repository, and a token. Do not
+use live mode for untrusted PR code. The fixture targets cannot switch out of
+dry-run.
+
+## GitHub configuration
+
+All new workflows check out trusted default-branch code and pin Actions by
+commit SHA. Historical workflows need `actions: read`, `contents: read`,
+`pull-requests: read`, and `issues: write` in their publishing job. PR advisory
+jobs remain read-only and force dry-run; their separate manual publishing jobs
+default to dry-run. Enable Actions issue creation and set the repository
+variable `AGENT_DRY_RUN=false` only after reviewing the permissions.
+
+Copilot assignment requires an authorized `COPILOT_TOKEN` or supported
+`GITHUB_TOKEN` access, plus Copilot Coding Agent availability in the
+repository. Assignment is recorded as successful only when GitHub confirms the
+Copilot bot in the returned assignee list. No workflow automatically merges
 or deploys changes.
 
-All agents default to `AGENT_DRY_RUN=true`: they log what they *would* do
-instead of writing to GitHub, so the whole system is safe to run without a
-live repository connection or API key.
+Cross-run telemetry is uploaded as Actions artifacts with 90-day retention.
+The effectiveness evaluator also reads GitHub issue, PR, timeline, and run
+metadata. Human operators may apply `agent-remediation-verified` only after
+checking acceptance criteria. Apply `agent-measured-target-met` or
+`agent-measured-target-missed` only after comparing a documented target with
+its measurement. Create those three labels in repository settings before
+using them as attestations. A merged PR alone is not a verified remediation.
 
-## GitHub Actions
+## Workflows
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `ci.yml` | PR, push to `main` | Deterministic lint/typecheck/test/coverage/security |
-| `agent-test-quality.yml` | after CI, or PR | Test Quality Agent comments on the PR |
-| `agent-security.yml` | PR, push to `main` | Supply Chain Agent comments on pinning/vulnerability findings |
-| `agent-merge-conflict.yml` | `workflow_dispatch` | Merge Conflict Agent proposes + validates a resolution |
-| `agent-pipeline-analysis.yml` | `workflow_dispatch`, weekly schedule | Pipeline Optimizer Agent opens a recommendation issue |
+| `ci.yml` | PR, push to `main` | Deterministic lint, typecheck, tests, coverage, and security |
+| `agent-test-quality.yml` | Existing CI/PR workflow | Test quality review |
+| `agent-security.yml` | PR, push to `main` | Supply-chain review |
+| `agent-merge-conflict.yml` | Manual dispatch | Conflict analysis |
+| `agent-pipeline-analysis.yml` | Manual, weekly | Pipeline optimizer |
+| `agent-flaky-test.yml` | After CI, manual, weekly | Historical JUnit analysis |
+| `agent-build-performance.yml` | After CI, manual, weekly | Workflow/job timing analysis |
+| `agent-test-impact.yml` | PR advisory, manual | Change-to-test mapping |
+| `agent-documentation-drift.yml` | PR advisory, manual | Documentation discrepancy analysis |
+| `agent-effectiveness.yml` | Manual, weekly | Agent outcome evaluation |
 
-## Demo walkthrough
+`workflow_run` agents never check out or execute PR code. Artifacts are
+downloaded through the GitHub API as bounded data and parsed without executing
+their contents. Missing or expired artifacts reduce the available sample;
+they are not interpreted as success.
 
-A full 12-step live-demo script is in
-[`docs/demo-scenario.md`](docs/demo-scenario.md), covering: a coverage gap,
-generated tests, an unpinned dependency, a merge conflict, and a
-pipeline-history-driven recommendation issue.
+## Repository layout
 
-## Screenshots
-
-> _Placeholder — add screenshots of a Test Quality Agent PR comment, a
-> Supply Chain Agent finding, and a Pipeline Optimizer Agent issue here after
-> running the demo against a real repository._
+`agents/` contains the shared `BaseAgent`, ten specialists, and orchestrator.
+`tools/github/` contains the GitHub API wrapper. `policies/` defines
+capabilities, assignment, and approval rules. `telemetry/` and Actions
+artifacts support outcome measurement. `tests/fixtures/agent_demos/` holds
+deterministic demo inputs.
 
 ## License
 
 [MIT](LICENSE)
-# Evolutionary CI/CD
-
-This project demonstrates bounded, issue-driven CI/CD agents. Agents do not
-normally remediate code: they produce evidence-backed work orders, and policy
-controls whether GitHub Copilot may implement them.
-
-The agent proposes the hypothesis. The pipeline provides the evidence.
-**Capability != Authority.**
-
-Run a safe local demonstration with:
-
-```bash
-make demo-test-quality-issue
-make demo-security-issue
-make demo-failure-issue
-make demo-evolution-issue
-```
-
-These commands use `AGENT_DRY_RUN=true` and print the issue that would be
-created. A live demonstration requires `GITHUB_TOKEN`, `GITHUB_REPOSITORY`,
-repository Actions permissions for issue writes, and an explicit
-`AGENT_DRY_RUN=false`. Copilot assignment uses GitHub's issue assignee API and
-the `copilot-swe-agent` account; repository availability of that account is a
-GitHub setting outside this project.

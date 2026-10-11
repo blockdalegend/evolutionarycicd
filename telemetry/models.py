@@ -12,6 +12,21 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+KNOWN_AGENT_NAMES = frozenset(
+    {
+        "test_quality_agent",
+        "failure_analysis_agent",
+        "merge_conflict_agent",
+        "supply_chain_agent",
+        "pipeline_optimizer_agent",
+        "flaky_test_agent",
+        "build_performance_agent",
+        "test_impact_agent",
+        "documentation_drift_agent",
+        "agent_effectiveness_agent",
+    }
+)
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
@@ -23,6 +38,7 @@ class AgentTelemetryRecord(BaseModel):
     timestamp: datetime = Field(default_factory=_utcnow)
     agent: str
     repository: str | None = None
+    workflow_run_id: str | None = None
     pull_request: int | None = None
     commit: str | None = None
     observation: str | None = None
@@ -35,6 +51,7 @@ class AgentTelemetryRecord(BaseModel):
     requires_approval: bool = False
     duration_ms: float | None = None
     success: bool = True
+    dry_run: bool | None = None
     event: str | None = None
     issue_number: int | None = None
     issue_url: str | None = None
@@ -42,6 +59,9 @@ class AgentTelemetryRecord(BaseModel):
     finding_type: str | None = None
     associated_pull_request: int | None = None
     copilot_assignment: str | None = None
+    pr_validation_result: str | None = None
+    merge_status: str | None = None
+    measured_outcome: str | None = None
 
 
 class PipelineRun(BaseModel):

@@ -7,6 +7,7 @@ telemetry stream. No database is required for the conference demo.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from telemetry.models import AgentTelemetryRecord, PipelineRun
@@ -18,6 +19,8 @@ PIPELINE_HISTORY_FILE = DATA_DIR / "pipeline_history.json"
 
 def record_telemetry(record: AgentTelemetryRecord, path: Path = TELEMETRY_FILE) -> None:
     """Append a single telemetry record to ``path`` as one JSON line."""
+    if record.workflow_run_id is None:
+        record.workflow_run_id = os.environ.get("GITHUB_RUN_ID")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(record.model_dump_json() + "\n")

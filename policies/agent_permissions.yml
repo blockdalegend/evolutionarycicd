@@ -58,3 +58,50 @@ pipeline_optimizer_agent:
   assign_copilot: true
   merge_pull_request: false
   deploy: false
+
+flaky_test_agent:
+  read_repository: true
+  read_pipeline_history: true
+  create_issue: true
+  assign_copilot: true
+  modify_code: false
+  merge_pull_request: false
+  deploy: false
+
+build_performance_agent:
+  read_repository: true
+  read_pipeline_history: true
+  create_issue: true
+  assign_copilot: false
+  modify_code: false
+  modify_workflow: false
+  merge_pull_request: false
+  deploy: false
+
+test_impact_agent:
+  read_repository: true
+  read_pull_request: true
+  create_issue: true
+  assign_copilot: false
+  modify_code: false
+  merge_pull_request: false
+  deploy: false
+
+documentation_drift_agent:
+  read_repository: true
+  read_pull_request: true
+  create_issue: true
+  assign_copilot: true
+  modify_code: false
+  merge_pull_request: false
+  deploy: false
+
+agent_effectiveness_agent:
+  read_repository: true
+  read_pipeline_history: true
+  create_issue: true
+  assign_copilot: false
+  modify_code: false
+  modify_workflow: false
+  merge_pull_request: false
+  deploy: false
