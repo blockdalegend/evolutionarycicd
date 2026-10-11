@@ -47,6 +47,15 @@ jobs:
       - name: Install trusted dependencies
         run: python -m pip install --retries 5 --timeout 60 -r requirements.txt
 
+      - name: Check trusted branch agent availability
+        id: agent-capability
+        run: |
+          if grep -Fq '"documentation_drift": DocumentationDriftAgent' scripts/run_agent.py; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Collect PR evidence through GitHub API
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -56,6 +65,7 @@ jobs:
         run: python scripts/collect_pipeline_context.py > /tmp/context.json
 
       - name: Run advisory analysis without GitHub writes
+        if: steps.agent-capability.outputs.available == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -63,6 +73,10 @@ jobs:
           AGENT_DRY_RUN: "true"
           AGENT_LOG_LEVEL: INFO
         run: python scripts/run_agent.py --agent documentation_drift --context-file /tmp/context.json --demo
+
+      - name: Explain trusted branch limitation
+        if: steps.agent-capability.outputs.available != 'true'
+        run: echo "::warning::Documentation Drift Agent is not present on the trusted default branch yet; PR analysis is skipped until this agent is merged."
 
       - name: Persist analysis telemetry
         if: always()

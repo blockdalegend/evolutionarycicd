@@ -83,6 +83,17 @@ def test_pull_request_analysis_jobs_are_read_only_and_force_dry_run() -> None:
             if "collect_pipeline_context.py" in step.get("run", "")
         )
         assert collector["env"]["AGENT_HISTORY_MODE"] == "none"
+        capability_check = next(
+            step for step in _steps(advisory) if step.get("id") == "agent-capability"
+        )
+        assert "scripts/run_agent.py" in capability_check["run"]
+        assert run_step["if"] == "steps.agent-capability.outputs.available == 'true'"
+        skip_notice = next(
+            step
+            for step in _steps(advisory)
+            if step.get("name") == "Explain trusted branch limitation"
+        )
+        assert "not present on the trusted default branch" in skip_notice["run"]
         dispatch = workflow["jobs"]["trusted-dispatch"]
         assert dispatch["permissions"]["issues"] == "write"
         assert workflow["on"]["workflow_dispatch"]["inputs"]["dry_run"]["default"] == "true"
