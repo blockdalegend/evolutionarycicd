@@ -1,0 +1,10 @@
+{
+  "build_history": [
+    {"run_id": "1", "workflow": "CI", "workflow_path": ".github/workflows/ci.yml", "timestamp": "2026-09-01T10:00:00Z", "duration_seconds": 100, "jobs": [{"name": "build-test", "duration_seconds": 90}]},
+    {"run_id": "2", "workflow": "CI", "workflow_path": ".github/workflows/ci.yml", "timestamp": "2026-09-02T10:00:00Z", "duration_seconds": 102, "jobs": [{"name": "build-test", "duration_seconds": 92}]},
+    {"run_id": "3", "workflow": "CI", "workflow_path": ".github/workflows/ci.yml", "timestamp": "2026-09-03T10:00:00Z", "duration_seconds": 98, "jobs": [{"name": "build-test", "duration_seconds": 89}]},
+    {"run_id": "4", "workflow": "CI", "workflow_path": ".github/workflows/ci.yml", "timestamp": "2026-09-04T10:00:00Z", "duration_seconds": 190, "jobs": [{"name": "build-test", "duration_seconds": 180}]},
+    {"run_id": "5", "workflow": "CI", "workflow_path": ".github/workflows/ci.yml", "timestamp": "2026-09-05T10:00:00Z", "duration_seconds": 195, "jobs": [{"name": "build-test", "duration_seconds": 184}]},
+    {"run_id": "6", "workflow": "CI", "workflow_path": ".github/workflows/ci.yml", "timestamp": "2026-09-06T10:00:00Z", "duration_seconds": 200, "jobs": [{"name": "build-test", "duration_seconds": 190}]}
+  ]
+}

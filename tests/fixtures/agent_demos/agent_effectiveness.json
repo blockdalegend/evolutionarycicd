@@ -1,0 +1,17 @@
+{
+  "telemetry": [
+    {"agent": "test_quality_agent", "event": "issue_created", "issue_number": 101, "issue_fingerprint": "fingerprint-101", "timestamp": "2026-09-01T10:00:00Z"},
+    {"agent": "test_quality_agent", "event": "issue_created", "issue_number": 102, "issue_fingerprint": "fingerprint-102", "timestamp": "2026-09-02T10:00:00Z"},
+    {"agent": "test_quality_agent", "event": "issue_reused", "issue_number": 101, "issue_fingerprint": "fingerprint-101"},
+    {"agent": "test_quality_agent", "event": "issue_reused", "issue_number": 101, "issue_fingerprint": "fingerprint-101"},
+    {"agent": "test_quality_agent", "event": "issue_reused", "issue_number": 102, "issue_fingerprint": "fingerprint-102"},
+    {"agent": "test_quality_agent", "event": "copilot_assignment_succeeded", "issue_number": 101},
+    {"agent": "test_quality_agent", "event": "copilot_assignment_failed", "issue_number": 102},
+    {"agent": "test_quality_agent", "event": "issue_linked_pr", "issue_number": 101, "issue_created_at": "2026-09-01T10:00:00Z", "pr_created_at": "2026-09-02T10:00:00Z"},
+    {"agent": "test_quality_agent", "event": "pr_merged", "issue_number": 101, "pr_created_at": "2026-09-02T10:00:00Z", "pr_merged_at": "2026-09-03T10:00:00Z"},
+    {"agent": "test_quality_agent", "event": "pr_validation_result", "issue_number": 101, "pr_validation_result": "success"},
+    {"agent": "test_quality_agent", "event": "measured_outcome", "issue_number": 101, "measured_outcome": "target_met"},
+    {"agent": "test_quality_agent", "event": "measured_outcome", "issue_number": 102, "measured_outcome": "target_missed"},
+    {"agent": "flaky_test_agent", "event": "issue_created", "dry_run": true}
+  ]
+}

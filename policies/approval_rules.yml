@@ -51,3 +51,18 @@ issue_policy:
     pipeline_optimizer_agent:
       create_issue: true
       auto_assign_copilot: true
+    flaky_test_agent:
+      create_issue: true
+      assign_copilot: true
+    build_performance_agent:
+      create_issue: true
+      assign_copilot: false
+    test_impact_agent:
+      create_issue: true
+      assign_copilot: false
+    documentation_drift_agent:
+      create_issue: true
+      assign_copilot: true
+    agent_effectiveness_agent:
+      create_issue: true
+      assign_copilot: false

@@ -1,0 +1,10 @@
+{
+  "changed_files": ["app/services/payment_service.py"],
+  "diff": "diff --git a/app/services/payment_service.py b/app/services/payment_service.py\n+def validate_new_payment_route():\n+    return True\n",
+  "source_files": {
+    "app/services/payment_service.py": "def validate_new_payment_route():\n    return True\n"
+  },
+  "test_sources": {
+    "tests/test_order_flow.py": "def test_existing_order_flow():\n    assert True\n"
+  }
+}

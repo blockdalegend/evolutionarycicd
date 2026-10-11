@@ -7,19 +7,26 @@ outside of GitHub Actions (e.g. locally), so the demo always works.
 
 from __future__ import annotations
 
+import io
 import json
+import math
 import os
 import re
 import subprocess  # nosec B404 - used only for fixed, read-only git invocations
 import sys
 import tempfile
+import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agents.orchestrator.orchestrator import load_github_event_context  # noqa: E402
+from telemetry.models import KNOWN_AGENT_NAMES  # noqa: E402
 from telemetry.store import load_pipeline_history  # noqa: E402
 from tools.analysis.ast_extractor import extract_python_evidence  # noqa: E402
 from tools.github.client import GitHubClient  # noqa: E402
@@ -65,7 +72,7 @@ def _parse_junit(path: Path) -> dict[str, object]:
         return {}
     try:
         root = ET.parse(path).getroot()
-    except (OSError, ET.ParseError):
+    except (OSError, ET.ParseError, DefusedXmlException):
         return {}
     suites = list(root.iter("testsuite"))
     failures: list[str] = []
@@ -78,13 +85,236 @@ def _parse_junit(path: Path) -> dict[str, object]:
             failures.append(f"{case.get('classname', '')}.{case.get('name', '')}: {message}")
 
     def _suite_count(attribute: str) -> int:
-        return sum(int(suite.get(attribute, 0)) for suite in suites)
+        total = 0
+        for suite in suites:
+            try:
+                total += int(suite.get(attribute, 0) or 0)
+            except ValueError:
+                continue
+        return total
 
     return {
         "failures": failures,
         "tests": _suite_count("tests") or int(root.get("tests", 0)),
         "failures_count": _suite_count("failures") + _suite_count("errors"),
     }
+
+
+def _parse_junit_history(content: bytes, run_id: str) -> dict[str, object]:
+    """Parse bounded JUnit XML into stable per-test historical outcomes."""
+    try:
+        root = ET.fromstring(content)
+    except (ET.ParseError, DefusedXmlException):
+        return {}
+    cases: list[dict[str, object]] = []
+    failed_test_ids: set[str] = set()
+    for case in root.iter("testcase"):
+        name = case.get("name", "").split("[", 1)[0]
+        if not name:
+            continue
+        classname = case.get("classname", "")
+        test_id = f"{classname}::{name}" if classname else name
+        test_id = re.sub(r"[^A-Za-z0-9_.:/-]", "_", test_id).strip("_")[:300]
+        outcome = (
+            "failed"
+            if case.find("failure") is not None or case.find("error") is not None
+            else "skipped"
+            if case.find("skipped") is not None
+            else "passed"
+        )
+        failure_node = case.find("failure")
+        if failure_node is None:
+            failure_node = case.find("error")
+        detail = ""
+        if failure_node is not None:
+            detail = " ".join(
+                part for part in (failure_node.get("message", ""), failure_node.text or "") if part
+            )[:1200]
+        try:
+            duration = float(case.get("time", 0) or 0)
+        except ValueError:
+            duration = 0.0
+        if not math.isfinite(duration) or duration < 0:
+            duration = 0.0
+        successful_rerun = outcome == "passed" and test_id in failed_test_ids
+        if outcome == "failed":
+            failed_test_ids.add(test_id)
+        cases.append(
+            {
+                "test_id": test_id,
+                "outcome": outcome,
+                "duration_seconds": duration,
+                "failure_detail": detail,
+                "successful_rerun": successful_rerun,
+            }
+        )
+    return {"run_id": run_id, "cases": cases}
+
+
+def _iso_duration(start: object, end: object) -> float | None:
+    """Calculate elapsed seconds only when both GitHub timestamps are present."""
+    if not isinstance(start, str) or not isinstance(end, str):
+        return None
+    try:
+        started = datetime.fromisoformat(start.replace("Z", "+00:00"))
+        finished = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=UTC)
+        if finished.tzinfo is None:
+            finished = finished.replace(tzinfo=UTC)
+        return max((finished - started).total_seconds(), 0.0)
+    except ValueError:
+        return None
+
+
+def _collect_github_history(
+    client: GitHubClient,
+    mode: str = "all",
+) -> tuple[
+    list[dict[str, object]],
+    list[dict[str, object]],
+    list[dict[str, object]],
+    list[dict[str, Any]],
+]:
+    """Collect trusted CI timing, JUnit, and telemetry artifacts through GitHub APIs."""
+    test_history: list[dict[str, object]] = []
+    build_history: list[dict[str, object]] = []
+    telemetry_history: list[dict[str, object]] = []
+    if mode == "none":
+        return test_history, build_history, telemetry_history, []
+    runs = client.list_workflow_runs(per_page=50)
+    ci_runs = (
+        client.list_workflow_runs(per_page=50, workflow="ci.yml")
+        if mode in {"all", "build", "tests", "outcomes"}
+        else []
+    )
+    runs_by_id = {run.get("id"): run for run in runs if isinstance(run.get("id"), int)}
+    runs_by_id.update({run.get("id"): run for run in ci_runs if isinstance(run.get("id"), int)})
+    runs = list(runs_by_id.values())
+    for run in runs:
+        run_id = run.get("id")
+        if not isinstance(run_id, int):
+            continue
+        if run.get("status") != "completed":
+            continue
+        run_key = str(run_id)
+        workflow_path = str(run.get("path", "")).split("@", 1)[0]
+        is_ci_run = workflow_path.endswith("/ci.yml")
+        if mode in {"build", "tests"} and not is_ci_run:
+            continue
+        needs_artifacts = mode in {"all", "outcomes"} or (is_ci_run and mode in {"build", "tests"})
+        artifacts = client.list_run_artifacts(run_id) if needs_artifacts else []
+        if is_ci_run and mode in {"all", "build"}:
+            run_duration = _iso_duration(
+                run.get("run_started_at") or run.get("created_at"), run.get("updated_at")
+            )
+            jobs = client.get_workflow_jobs(run_id)
+            job_data: list[dict[str, object]] = []
+            for job in jobs:
+                duration = _iso_duration(job.get("started_at"), job.get("completed_at"))
+                if duration is not None:
+                    job_data.append(
+                        {
+                            "name": job.get("name", "unknown"),
+                            "duration_seconds": duration,
+                            "conclusion": job.get("conclusion", "unknown"),
+                        }
+                    )
+            if run_duration is not None:
+                build_history.append(
+                    {
+                        "run_id": run_key,
+                        "workflow": run.get("name", "CI"),
+                        "workflow_path": workflow_path,
+                        "status": run.get("conclusion", "unknown"),
+                        "duration_seconds": run_duration,
+                        "jobs": job_data,
+                        "artifact_bytes": sum(
+                            int(artifact.get("size_in_bytes", 0) or 0) for artifact in artifacts
+                        ),
+                        "timestamp": run.get("run_started_at", ""),
+                    }
+                )
+        for artifact in artifacts:
+            name = artifact.get("name")
+            artifact_id = artifact.get("id")
+            if artifact.get("expired") or not isinstance(artifact_id, int):
+                continue
+            collect_telemetry = mode in {"all", "outcomes"} and name == "agent-telemetry"
+            collect_tests = mode in {"all", "tests"} and is_ci_run and name == "test-results"
+            if not collect_telemetry and not collect_tests:
+                continue
+            archive = client.download_run_artifact(artifact_id)
+            if archive is None:
+                continue
+            try:
+                with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+                    members = [item for item in bundle.infolist() if not item.is_dir()]
+                    if len(members) > 20:
+                        continue
+                    if collect_tests:
+                        report = next(
+                            (
+                                item
+                                for item in members
+                                if Path(item.filename).name == "junit.xml"
+                                and item.file_size <= 5_000_000
+                            ),
+                            None,
+                        )
+                        if report is not None:
+                            parsed = _parse_junit_history(bundle.read(report), run_key)
+                            if parsed:
+                                test_history.append(parsed)
+                    else:
+                        for item in members:
+                            if (
+                                Path(item.filename).name != "agent_telemetry.ndjson"
+                                or item.file_size > 5_000_000
+                            ):
+                                continue
+                            for line in bundle.read(item).decode("utf-8").splitlines():
+                                if len(telemetry_history) >= 1000:
+                                    break
+                                try:
+                                    row = json.loads(line)
+                                except json.JSONDecodeError:
+                                    continue
+                                if (
+                                    isinstance(row, dict)
+                                    and row.get("agent") in KNOWN_AGENT_NAMES
+                                ):
+                                    telemetry_history.append(row)
+            except (OSError, zipfile.BadZipFile, UnicodeDecodeError, RuntimeError):
+                continue
+    lifecycle = client.list_agent_issue_lifecycle(runs) if mode in {"all", "outcomes"} else []
+    live_issue_numbers = {
+        event.get("issue_number") for event in lifecycle if event.get("event") == "issue_created"
+    }
+    live_pr_links = {
+        (event.get("issue_number"), event.get("event"), event.get("associated_pull_request"))
+        for event in lifecycle
+        if event.get("event") in {"issue_linked_pr", "pr_merged", "pr_validation_result"}
+    }
+    telemetry_history = [
+        event
+        for event in telemetry_history
+        if not (
+            event.get("event") == "issue_created"
+            and event.get("issue_number") in live_issue_numbers
+        )
+        and not (
+            event.get("event") in {"issue_linked_pr", "pr_merged", "pr_validation_result"}
+            and (
+                event.get("issue_number"),
+                event.get("event"),
+                event.get("associated_pull_request"),
+            )
+            in live_pr_links
+        )
+    ]
+    telemetry_history.extend(lifecycle)
+    return test_history[:50], build_history[:50], telemetry_history[-2000:], runs
 
 
 def _parse_coverage(path: Path) -> dict[str, object]:
@@ -224,15 +454,66 @@ def collect_context() -> dict[str, object]:
             else pip_audit
         ),
         "github_actions": zizmor if isinstance(zizmor, list) else [],
-        "github_actions_scan_status": (
-            "completed" if isinstance(zizmor, list) else "unavailable"
-        ),
+        "github_actions_scan_status": ("completed" if isinstance(zizmor, list) else "unavailable"),
     }
     history = load_pipeline_history()
+    client = GitHubClient()
+    history_mode = os.environ.get("AGENT_HISTORY_MODE", "all").lower()
+    if history_mode not in {"all", "build", "tests", "outcomes", "none"}:
+        history_mode = "none"
+    test_history, build_history, telemetry_history, workflow_runs = _collect_github_history(
+        client, history_mode
+    )
+    if not test_history and isinstance(junit, dict) and junit:
+        # The current JUnit report remains usable even when prior artifacts expired.
+        current_xml = _find_artifact("junit.xml")
+        if current_xml.exists():
+            try:
+                parsed_current = _parse_junit_history(
+                    current_xml.read_bytes(), os.environ.get("GITHUB_RUN_ID", "local")
+                )
+                if parsed_current:
+                    test_history.append(parsed_current)
+            except OSError:
+                pass
     local_changed_files, local_diff = _collect_local_git_diff()
     changed_files = pull_request_info.changed_files if pull_request_info else local_changed_files
     diff = pull_request_info.diff if pull_request_info else local_diff
     test_sources = _collect_test_sources(Path.cwd())
+    source_files: dict[str, str] = {}
+    for source_path in sorted(Path.cwd().glob("app/**/*.py"))[:100]:
+        if source_path.stat().st_size > 100_000:
+            continue
+        try:
+            source_files[source_path.relative_to(Path.cwd()).as_posix()] = source_path.read_text(
+                encoding="utf-8"
+            )
+        except (OSError, UnicodeDecodeError):
+            continue
+    source_ref = (
+        pull_request.get("head", {}).get("sha")
+        if isinstance(pull_request.get("head"), dict)
+        else None
+    )
+    if not source_ref and workflow_run.get("pull_requests"):
+        first_pull = workflow_run["pull_requests"][0]
+        if isinstance(first_pull, dict):
+            pull_head = first_pull.get("head")
+            nested_sha = pull_head.get("sha") if isinstance(pull_head, dict) else None
+            source_ref = first_pull.get("head_sha") or first_pull.get("sha") or nested_sha
+    if pull_request_info and source_ref:
+        for changed_path in changed_files[:100]:
+            content = client.get_file_contents(changed_path, source_ref)
+            if content is not None:
+                source_files[changed_path] = content
+    else:
+        for changed_path in changed_files[:100]:
+            path = Path(changed_path)
+            if path.is_file() and path.stat().st_size <= 100_000:
+                try:
+                    source_files[changed_path] = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
 
     return {
         "repository": os.environ.get("GITHUB_REPOSITORY", ""),
@@ -247,7 +528,11 @@ def collect_context() -> dict[str, object]:
         "changed_files": changed_files,
         "diff": diff,
         "test_results": junit,
+        "test_history": test_history,
+        "build_history": build_history or [json.loads(run.model_dump_json()) for run in history],
+        "telemetry": telemetry_history,
         "test_sources": test_sources,
+        "source_files": source_files,
         "coverage": coverage,
         "static_evidence": _collect_static_evidence(Path.cwd(), changed_files, test_sources),
         "security_findings": security_findings,

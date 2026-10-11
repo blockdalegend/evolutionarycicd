@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test security ci demo-history agent-test agent-optimize demo-test-quality-issue demo-security-issue demo-failure-issue demo-evolution-issue
+.PHONY: install lint typecheck test security ci demo-history agent-test agent-optimize demo-test-quality-issue demo-security-issue demo-failure-issue demo-evolution-issue demo-flaky-test demo-build-performance demo-test-impact demo-documentation-drift demo-agent-effectiveness
 
 install:
 	pip install -r requirements.txt
@@ -38,3 +38,18 @@ demo-failure-issue:
 
 demo-evolution-issue:
 	AGENT_DRY_RUN=true python scripts/run_agent.py --agent pipeline_optimizer
+
+demo-flaky-test:
+	AGENT_DRY_RUN=true python scripts/run_agent.py --agent flaky_test --context-file tests/fixtures/agent_demos/flaky_test.json --demo
+
+demo-build-performance:
+	AGENT_DRY_RUN=true python scripts/run_agent.py --agent build_performance --context-file tests/fixtures/agent_demos/build_performance.json --demo
+
+demo-test-impact:
+	AGENT_DRY_RUN=true python scripts/run_agent.py --agent test_impact --context-file tests/fixtures/agent_demos/test_impact.json --demo
+
+demo-documentation-drift:
+	AGENT_DRY_RUN=true python scripts/run_agent.py --agent documentation_drift --context-file tests/fixtures/agent_demos/documentation_drift.json --demo
+
+demo-agent-effectiveness:
+	AGENT_DRY_RUN=true python scripts/run_agent.py --agent agent_effectiveness --context-file tests/fixtures/agent_demos/agent_effectiveness.json --demo

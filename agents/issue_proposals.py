@@ -26,6 +26,7 @@ class IssueProposal(BaseModel):
     labels: list[str] = Field(default_factory=list)
     source_agent: str = Field(min_length=1)
     confidence: float = Field(ge=0.0, le=1.0)
+    deduplication_key: str | None = None
     original_pull_request: int | None = None
     commit_sha: str | None = None
     assign_to_copilot: bool = True
@@ -43,12 +44,13 @@ class IssueProposal(BaseModel):
             self.source_agent,
             self.finding_type,
             *(self.affected_files or ["repository"]),
-            re.sub(r"\s+", " ", self.problem.lower()).strip(),
+            self.deduplication_key or re.sub(r"\s+", " ", self.problem.lower()).strip(),
         ]
         return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:20]
 
     def render_markdown(self) -> str:
         """Render a deterministic, implementation-oriented issue body."""
+
         def bullets(values: list[str]) -> str:
             return "\n".join(f"- [ ] {value}" for value in values) or (
                 "- [ ] Complete the requested change"
@@ -143,6 +145,16 @@ def proposal_from_decision(
     if action == "no_action" or confidence <= 0:
         return None
     arguments = getattr(decision, "arguments", {}) or {}
+    supplied = arguments.get("issue_proposal")
+    if isinstance(supplied, dict):
+        proposal_data = dict(supplied)
+        proposal_data["source_agent"] = source_agent
+        proposal_data["confidence"] = confidence
+        if proposal_data.get("original_pull_request") is None:
+            proposal_data["original_pull_request"] = getattr(context, "pull_request_number", None)
+        if proposal_data.get("commit_sha") is None:
+            proposal_data["commit_sha"] = getattr(context, "commit_sha", None)
+        return IssueProposal.model_validate(proposal_data)
     files = list(getattr(context, "changed_files", []) or [])
     if not files:
         files = list(arguments.get("files", []) or [])

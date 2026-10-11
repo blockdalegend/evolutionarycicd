@@ -1,0 +1,7 @@
+{
+  "changed_files": ["app/services/payment_service.py"],
+  "diff": "diff --git a/app/services/payment_service.py b/app/services/payment_service.py\n+PAYMENT_TIMEOUT_SECONDS = int(os.environ.get('DEMO_PAYMENT_TIMEOUT_SECONDS_2026', '5'))\n",
+  "source_files": {
+    "app/services/payment_service.py": "PAYMENT_TIMEOUT_SECONDS = int(os.environ.get('DEMO_PAYMENT_TIMEOUT_SECONDS_2026', '5'))\n"
+  }
+}

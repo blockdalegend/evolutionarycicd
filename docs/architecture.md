@@ -6,34 +6,64 @@ every side effect flows through an explicit policy gate and a narrow set of
 allowed tools.
 
 ```mermaid
-flowchart TD
-    Dev[Developer] --> PR[Pull Request]
-    PR --> GHA[GitHub Actions]
-    GHA --> DCI[Deterministic CI\nlint / typecheck / test / security]
-    DCI --> CB[Context Builder\nscripts/collect_pipeline_context.py]
-    CB --> Orchestrator[Agent Orchestrator]
-    Orchestrator --> Agent[Specialized Agent\nobserve -> reason -> act -> validate]
-    Agent --> Policy[Policy Engine\nagent_permissions.yml + approval_rules.yml]
-    Policy --> Tools[Allowed Tools\nGitHub API / pytest / scanners]
-    Tools --> Validation[Validation]
-    Validation --> Output[GitHub PR Comment / Issue / Recommendation]
-    Output --> Telemetry[Telemetry Store\ndata/*.ndjson]
-    Telemetry --> Optimizer[Pipeline Optimizer Agent]
-    Optimizer -.->|recommendation only, human-approved| GHA
+flowchart LR
+  GHA[GitHub Actions] --> AGENTS[Specialized Agents]
+  AGENTS --> EVIDENCE[Deterministic Evidence]
+  EVIDENCE --> ORCH[Shared Orchestrator]
+  ORCH --> POLICY[Policy Engine]
+  POLICY --> ISSUES[GitHub Issues]
+  ISSUES --> COPILOT[Copilot Coding Agent]
+  COPILOT --> PR[Pull Request]
+  PR --> CI[CI Validation]
+  CI --> HUMAN[Human Review]
+  HUMAN --> TEL[Persistent Run Artifacts + GitHub Metadata]
+  TEL --> FEEDBACK[Evolutionary Feedback]
+  FEEDBACK --> AGENTS
 ```
+
+Traditional CI/CD executes predetermined workflows. Agentic CI/CD uses
+specialized agents to identify evidence-backed problems and coordinate
+implementation through reviewed issues and pull requests. Evolutionary CI/CD
+measures what happened after those changes and uses that evidence to improve
+future delivery decisions.
 
 ## Layers
 
 | Layer | Responsibility | Code |
 |---|---|---|
 | Deterministic CI | Build, lint, type-check, test, scan | `.github/workflows/ci.yml` |
-| Context Builder | Turn a GitHub event + telemetry into an `AgentContext` | `scripts/collect_pipeline_context.py` |
+| Context Builder | Turn GitHub events, bounded workflow artifacts, repository files, and telemetry into an `AgentContext` | `scripts/collect_pipeline_context.py` |
 | Orchestrator | Load policy, run one agent, enforce capability checks, post PR comments | `agents/orchestrator/orchestrator.py` |
 | Agents | Domain-specific observe/reason/act/validate logic | `agents/*/agent.py` |
 | Policy Engine | Declarative capability + approval rules | `policies/*.yml` |
 | Tools | The only things an agent may actually invoke | `tools/*` |
-| Telemetry | Auditable, append-only record of every agent execution | `telemetry/*`, `data/*.ndjson` |
-| Pipeline Optimizer | Learns from telemetry, proposes workflow improvements | `agents/pipeline_optimizer/agent.py` |
+| Telemetry | Structured local run record uploaded as an artifact; GitHub API reconciliation provides issue/PR lifecycle outcomes | `telemetry/*`, `data/*.ndjson`, workflow artifacts |
+| Evolutionary feedback | Evaluates history, delivery timing, and explicitly attested remediation outcomes | `agents/pipeline_optimizer/agent.py`, `agents/agent_effectiveness/agent.py` |
+
+## Agent inventory
+
+The original five agents and the five additional specialists share the same
+`BaseAgent` lifecycle and issue proposal path. New workflow permissions are
+scoped per job. The `workflow_run` agents check out trusted default-branch
+code and consume upstream JUnit only as size-bounded XML data; they never
+execute code from the triggering pull request. PR advisory workflows have
+read-only permissions and force dry-run. Manual dispatch is the separate
+trusted publishing path.
+
+Historical test results come from the CI workflow's `test-results` artifact.
+The collector validates artifact metadata, bounds the archive and XML size,
+parses with `defusedxml`, and tolerates expired/missing artifacts. Run and job
+durations, artifact size, and explicitly reported stage/cache metrics remain
+distinct; no stage metric is inferred from the enclosing job duration.
+
+Agent telemetry is uploaded to a named per-run Actions artifact with a 90-day
+retention. The evaluator reconciles marked GitHub issues, cross-referenced
+pull requests, merged state, and completed validation runs. It calculates
+issue-to-PR, acceptance, duplicate, verification, measured-improvement, and
+latency metrics separately. A merge does not imply verified remediation.
+Human-applied labels `agent-remediation-verified`,
+`agent-measured-target-met`, and `agent-measured-target-missed` are the
+explicit attestation inputs for verification and measured outcomes.
 
 ## Why this shape?
 

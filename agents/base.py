@@ -41,7 +41,11 @@ class AgentContext(BaseModel):
     changed_files: list[str] = Field(default_factory=list)
     diff: str = ""
     test_results: dict[str, Any] = Field(default_factory=dict)
+    test_history: list[dict[str, Any]] = Field(default_factory=list)
+    build_history: list[dict[str, Any]] = Field(default_factory=list)
+    telemetry: list[dict[str, Any]] = Field(default_factory=list)
     test_sources: dict[str, str] = Field(default_factory=dict)
+    source_files: dict[str, str] = Field(default_factory=dict)
     coverage: dict[str, Any] = Field(default_factory=dict)
     static_evidence: dict[str, Any] = Field(default_factory=dict)
     security_findings: dict[str, Any] = Field(default_factory=dict)
@@ -232,9 +236,7 @@ class BaseAgent(ABC):
             message=decision.reason if decision else "no decision produced",
             artifacts={
                 "decision": decision.model_dump() if decision else {},
-                "issue_proposal": (
-                    decision.arguments.get("issue_proposal") if decision else None
-                ),
+                "issue_proposal": (decision.arguments.get("issue_proposal") if decision else None),
             },
             validation_results=validation,
         )

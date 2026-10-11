@@ -12,7 +12,32 @@ This walkthrough is designed to be run live at a conference in roughly
 ```bash
 make install
 make demo-history   # seeds data/pipeline_history.json with ~30 runs
+make demo-flaky-test
+make demo-build-performance
+make demo-test-impact
+make demo-documentation-drift
+make demo-agent-effectiveness
 ```
+
+Each new target loads a checked-in fixture and forces dry-run. The fixture
+scenarios include intermittent failures with successful reruns, a measured
+six-run duration regression, an unmapped changed module, an undocumented
+environment variable, and agent lifecycle outcomes with duplicates and
+separate merge/verification/measurement states. They require no random
+failures, external services, or LLM calls. Output includes the finding, full
+issue proposal, assignment permission, and simulated result.
+
+Local live mode is separate from the demo targets and requires explicit
+authorization:
+
+```bash
+AGENT_ALLOW_LIVE=true GITHUB_TOKEN=<scoped-token> GITHUB_REPOSITORY=owner/repo \
+	python scripts/run_agent.py --agent flaky_test \
+	--context-file tests/fixtures/agent_demos/flaky_test.json --live
+```
+
+Use only a repository authorized for live testing. The `--demo` option always
+forces dry-run, even if the process environment says otherwise.
 
 ## Step-by-step
 
@@ -84,6 +109,13 @@ on — the agent never edits workflow YAML directly.
 | Maturity level | What it looks like in this demo |
 |---|---|
 | Traditional CI/CD | Step 1: `ci.yml` just executes. |
-| AI-assisted CI/CD | Step 4/7: agents explain *what* happened (a coverage gap, an unpinned action). |
-| Agentic CI/CD | Step 5-6, 9: agents take a bounded action (generate a test, propose a merge resolution) and validate it themselves. |
-| Evolutionary CI/CD | Step 10-12: the system learns from its own history and proposes changes to the pipeline itself, gated by human approval. |
+| Agentic CI/CD | Steps 4-9: specialized agents identify evidence-backed issues and coordinate reviewed implementation. |
+| Evolutionary CI/CD | Steps 10-12 and the effectiveness demo: the system measures outcomes and uses evidence to improve future delivery decisions. |
+
+The test-impact agent is advisory and never skips mandatory tests. The build
+performance agent reports only measured workflow/job durations and any
+explicitly supplied stage/cache metrics. The effectiveness agent does not
+count merged PRs as verified remediation. Human operators apply
+`agent-remediation-verified` only after checking acceptance criteria, and use
+`agent-measured-target-met` or `agent-measured-target-missed` only when a
+measured target exists.

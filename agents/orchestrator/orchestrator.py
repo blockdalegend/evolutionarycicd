@@ -114,7 +114,9 @@ class AgentOrchestrator:
             issue_result = self.handle_issue_proposal(IssueProposal.model_validate(proposal_data))
             result.artifacts["issue_result"] = issue_result
 
-        if context.pull_request_number is not None:
+        if context.pull_request_number is not None and self.check_capability(
+            agent.name, "comment_pull_request"
+        ):
             comment = self._format_pr_comment(agent.name, result)
             self.github_client.post_pr_comment(context.pull_request_number, comment)
         return result
@@ -126,11 +128,17 @@ class AgentOrchestrator:
         agent_policy = self.permissions.get(proposal.source_agent, {})
         issue_agent_policy = policy.get("agents", {}).get(proposal.source_agent, agent_policy)
         assign = bool(
-            issue_agent_policy.get(
+            agent_policy.get("assign_copilot", False)
+            and issue_agent_policy.get(
                 "assign_copilot", issue_agent_policy.get("auto_assign_copilot", False)
             )
+            and proposal.assign_to_copilot
         )
-        if proposal.confidence < minimum or not issue_agent_policy.get("create_issue", False):
+        can_create = bool(
+            agent_policy.get("create_issue", False)
+            and issue_agent_policy.get("create_issue", False)
+        )
+        if proposal.confidence < minimum or not can_create:
             record_telemetry(
                 AgentTelemetryRecord(
                     agent=proposal.source_agent,
@@ -152,6 +160,7 @@ class AgentOrchestrator:
                 },
             )
             return {"created": False, "reason": "policy or confidence threshold"}
+        proposal.assign_to_copilot = assign
         existing = self.github_client.find_existing_issue(proposal.fingerprint())
         if existing:
             self.github_client.comment_on_issue(existing["number"], proposal.render_markdown())
@@ -162,6 +171,23 @@ class AgentOrchestrator:
                     "run the validation commands, create a PR, and never merge or deploy.",
                 )
                 existing.update(assignment)
+                record_telemetry(
+                    AgentTelemetryRecord(
+                        agent=proposal.source_agent,
+                        event=(
+                            "copilot_assignment_succeeded"
+                            if assignment.get("assigned")
+                            else "copilot_assignment_failed"
+                        ),
+                        issue_number=existing["number"],
+                        issue_fingerprint=proposal.fingerprint(),
+                        copilot_assignment=(
+                            "succeeded" if assignment.get("assigned") else "failed"
+                        ),
+                        dry_run=bool(assignment.get("dry_run", False)),
+                        success=bool(assignment.get("assigned")),
+                    )
+                )
             record_telemetry(
                 AgentTelemetryRecord(
                     agent=proposal.source_agent,
@@ -172,6 +198,13 @@ class AgentOrchestrator:
                     issue_url=existing.get("url"),
                     issue_fingerprint=proposal.fingerprint(),
                     associated_pull_request=proposal.original_pull_request,
+                    copilot_assignment=(
+                        "succeeded"
+                        if existing.get("assigned")
+                        else "failed"
+                        if assign
+                        else "not_permitted"
+                    ),
                 )
             )
             return {"created": False, "reused": True, **existing}
@@ -210,6 +243,15 @@ class AgentOrchestrator:
                     issue_number=created.get("number"),
                     issue_url=created.get("url"),
                     issue_fingerprint=proposal.fingerprint(),
+                    copilot_assignment=(
+                        "succeeded"
+                        if created.get("assigned")
+                        else "failed"
+                        if assign
+                        else "not_permitted"
+                    ),
+                    dry_run=bool(created.get("dry_run", False)),
+                    success=bool(created.get("assigned", True)),
                 )
             )
         record_telemetry(
@@ -222,6 +264,7 @@ class AgentOrchestrator:
                 issue_url=created.get("url"),
                 issue_fingerprint=proposal.fingerprint(),
                 associated_pull_request=proposal.original_pull_request,
+                dry_run=bool(created.get("dry_run", False)),
             )
         )
         return created
