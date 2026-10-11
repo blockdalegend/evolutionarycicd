@@ -29,8 +29,9 @@ sequenceDiagram
 
 * **`AgentContext`** — everything an agent is allowed to observe: repository,
   PR number, commit SHA, changed files, diff, test results, coverage,
-  security findings, and pipeline history. Agents cannot see anything not in
-  this object.
+  security findings, pipeline history, historical JUnit outcomes, workflow/job
+  timing samples, telemetry events, test sources, and bounded source-file
+  contents. Agents cannot see anything not in this object.
 * **`AgentDecision`** — the single decision an agent's `reason` step
   produces: `action`, `reason`, an optional `tool` + `arguments`, a
   `confidence` score, and `requires_approval`.
@@ -82,6 +83,62 @@ checked. `agent-measured-target-met` and `agent-measured-target-missed`
 record comparison outcomes only when a baseline and target exist. Unknown,
 pending, rejected, and incomplete work remains distinct; PR creation/merge is
 not proof of remediation success.
+
+## New-agent evidence and metric definitions
+
+### Flaky Test
+
+The agent groups JUnit cases by stable `classname::test_name` and counts at
+most one failing run per test per workflow run. A passing attempt is considered
+a successful rerun only when a failure for that test appeared earlier in the
+same report. A flaky finding requires at least five runs, two failing runs, at
+least one passing run, and a failure rate below 80%. Tests at or above 80% are
+reported as persistent failures in analysis, not proposed as flaky issues.
+Failure output is reduced to categorized timing/environment clues before it
+can appear in telemetry or issue content.
+
+### Build Performance
+
+Runs are ordered by timestamp and compared using at least three baseline and
+three recent samples; the recent window is up to five runs. A finding requires
+the relative increase in average workflow duration to meet
+`AGENT_BUILD_REGRESSION_THRESHOLD` (default `0.30`). GitHub currently supplies
+workflow/job timings and artifact sizes; installation, compilation, test-stage,
+or cache metrics are included only when explicitly present in the input data.
+The workflow's enclosing job duration is never relabeled as a stage duration.
+
+### Test Impact and Documentation Drift
+
+Test Impact uses changed Python files, safe repository-relative paths, test
+sources, filename conventions, and AST import reachability. It reports direct
+and transitive relationships and unmatched modules as advisory findings; the
+result is never used as a CI test allowlist. Documentation Drift examines
+added diff lines for environment-variable declarations and CLI options, and
+compares new public functions in `app/` against README/docs text. It proposes
+work only when a named declaration is absent from documentation.
+
+### Effectiveness Metrics
+
+Metrics cover a rolling 90-day window, excluding dry-run events. For each
+registered agent:
+
+| Metric | Definition |
+|---|---|
+| Issue-to-PR conversion | Unique created issues with at least one linked PR divided by successfully created issues |
+| PR acceptance | Unique merged PRs divided by unique PRs linked to agent issues |
+| Duplicate issue rate | Reused findings divided by all issue attempts, including withheld and failed-create proposals |
+| Verified remediation | Issues with `agent-remediation-verified` divided by merged issues |
+| Measured improvement | `agent-measured-target-met` outcomes divided by target-met plus target-missed outcomes |
+| Issue-to-PR time | Mean elapsed time from issue creation to first linked PR |
+| PR-to-merge time | Mean elapsed time from linked PR creation to merge |
+
+GitHub issue/PR metadata supplies conversion, merge, validation, and latency
+evidence. Human-applied outcome labels supply verification and target results.
+Unavailable data remains `unavailable`; an unmerged issue is incomplete or
+pending, a closed issue without a merged PR is rejected, and a merge alone is
+not considered successful remediation. Artifact retention and API sample
+bounds can reduce the evaluation sample, so rates must be interpreted with
+their sample counts.
 
 ## Why "Capability != Authority"?
 
