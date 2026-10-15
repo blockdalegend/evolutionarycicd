@@ -40,7 +40,64 @@ def test_pipeline_optimizer_provides_recommended_fixes() -> None:
     assert fixes
     assert all(item["recommendation"] for item in fixes)
     assert all(item["recommended_fix"] for item in fixes)
+    assert all(item["category"] == "flaky_test" for item in fixes)
+    assert all("flaky:test_payment_gateway_timeout" in item["evidence"] for item in fixes)
     assert any("deterministic fixture" in item["recommended_fix"] for item in fixes)
+
+
+def test_pipeline_optimizer_fallback_findings_include_evidence_and_category() -> None:
+    runs = [
+        {
+            "workflow": "ci.yml",
+            "status": "failure",
+            "duration_seconds": 20,
+            "failed_stage": "pytest",
+            "failure_reason": "flaky:test_payment_gateway_timeout",
+            "retry_count": 0,
+        }
+        for _ in range(3)
+    ]
+    runs.extend(
+        {
+            "workflow": "ci.yml",
+            "status": "failure",
+            "duration_seconds": 20,
+            "failed_stage": "dependency_install",
+            "failure_reason": "dependency:requests_registry_timeout",
+            "retry_count": 0,
+        }
+        for _ in range(2)
+    )
+    runs.extend(
+        {
+            "workflow": "slow.yml",
+            "status": "success",
+            "duration_seconds": duration,
+            "retry_count": 0,
+        }
+        for duration in (100, 100, 250)
+    )
+    runs.extend(
+        {
+            "workflow": "retry.yml",
+            "status": "success",
+            "duration_seconds": 20,
+            "retry_count": 1,
+        }
+        for _ in range(2)
+    )
+
+    findings = PipelineOptimizerAgent._analyze_details(runs)
+
+    assert {finding["category"] for finding in findings} == {
+        "repeated_failure",
+        "flaky_test",
+        "dependency",
+        "performance",
+        "retries",
+    }
+    assert all(len(finding["evidence"]) >= 20 for finding in findings)
+    assert all(finding["recommendation"] and finding["recommended_fix"] for finding in findings)
 
 
 def test_pipeline_optimizer_rejects_generic_llm_reason(monkeypatch) -> None:
