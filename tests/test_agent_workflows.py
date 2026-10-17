@@ -43,6 +43,35 @@ def test_new_agent_workflows_have_expected_triggers_and_pinned_actions() -> None
         assert not re.search(r"gh\s+pr\s+merge|terraform\s+apply|az\s+deployment", content)
 
 
+def test_failure_analysis_uses_manual_dispatch_only() -> None:
+    workflow = yaml.load(
+        (WORKFLOW_DIR / "agent-failure-analysis.yml").read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+
+    assert set(workflow["on"]) == {"workflow_dispatch"}
+
+
+def test_test_quality_persists_telemetry_and_reports() -> None:
+    workflow = yaml.load(
+        (WORKFLOW_DIR / "agent-test-quality.yml").read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    steps = _steps(workflow["jobs"]["test-quality-agent"])
+    uploads = [
+        step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@")
+    ]
+
+    assert len(uploads) == 2
+    assert all(ACTION_SHA.fullmatch(step["uses"]) for step in uploads)
+    telemetry = next(step for step in uploads if step["with"]["name"] == "agent-telemetry")
+    assert telemetry["if"] == "always()"
+    assert telemetry["with"]["path"] == "data/agent_telemetry.ndjson"
+    reports = next(step for step in uploads if step["with"]["name"] == "test-quality-reports")
+    assert reports["if"] == "always()"
+    assert set(reports["with"]["path"].splitlines()) == {"junit.xml", "coverage.xml"}
+
+
 def test_history_workflows_use_trusted_code_and_read_only_artifact_collection() -> None:
     workflows = _workflows()
     for name in ("agent-flaky-test.yml", "agent-build-performance.yml"):
