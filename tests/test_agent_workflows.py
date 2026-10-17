@@ -58,7 +58,9 @@ def test_test_quality_persists_telemetry_and_reports() -> None:
         Loader=yaml.BaseLoader,
     )
     steps = _steps(workflow["jobs"]["test-quality-agent"])
-    uploads = [step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@")]
+    uploads = [
+        step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@")
+    ]
 
     assert len(uploads) == 2
     assert all(ACTION_SHA.fullmatch(step["uses"]) for step in uploads)
