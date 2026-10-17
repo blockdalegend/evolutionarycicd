@@ -40,7 +40,7 @@ jobs:
           curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 5 \
             -o /tmp/ollama-install.sh https://ollama.com/install.sh
           for attempt in {1..5}; do
-            if sh /tmp/ollama-install.sh; then
+            if OLLAMA_VERSION=0.40.5 sh /tmp/ollama-install.sh; then
               break
             fi
             if [ "$attempt" -eq 5 ]; then
