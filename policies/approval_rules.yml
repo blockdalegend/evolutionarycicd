@@ -56,13 +56,13 @@ issue_policy:
       assign_copilot: true
     build_performance_agent:
       create_issue: true
-      assign_copilot: false
+      assign_copilot: true
     test_impact_agent:
       create_issue: true
-      assign_copilot: false
+      assign_copilot: true
     documentation_drift_agent:
       create_issue: true
       assign_copilot: true
     agent_effectiveness_agent:
       create_issue: true
-      assign_copilot: false
+      assign_copilot: true

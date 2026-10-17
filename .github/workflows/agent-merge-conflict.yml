@@ -1,6 +1,8 @@
 name: Agent - Merge Conflict Resolution
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       pull_request_number:
@@ -54,7 +56,7 @@ jobs:
 
       - name: Fetch PR branch and attempt merge (to surface conflicts)
         run: |
-          git fetch origin "pull/${{ inputs.pull_request_number }}/head:pr-branch"
+          git fetch origin "pull/${{ inputs.pull_request_number || github.event.pull_request.number }}/head:pr-branch"
           git checkout main
           git merge --no-commit --no-ff pr-branch || true
 
@@ -63,7 +65,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COPILOT_TOKEN: ${{ secrets.COPILOT_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          AGENT_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
+          AGENT_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number || github.event.pull_request.number }}
           AGENT_DRY_RUN: ${{ vars.AGENT_DRY_RUN || 'true' }}
           AGENT_LOG_LEVEL: INFO
           LLM_API_KEY: ollama
