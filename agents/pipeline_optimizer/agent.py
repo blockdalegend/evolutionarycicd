@@ -229,14 +229,21 @@ class PipelineOptimizerAgent(BaseAgent):
             )
 
         failing_stage_counts: Counter[str] = Counter()
-        durations_by_workflow: dict[str, list[float]] = defaultdict(list)
+        durations_by_workflow: dict[str, list[tuple[str | None, float]]] = defaultdict(list)
         failure_reason_counts: Counter[str] = Counter()
-        retry_counts_by_workflow: dict[str, list[int]] = defaultdict(list)
+        retry_runs_by_workflow: dict[str, list[tuple[str | None, int]]] = defaultdict(list)
+        failure_run_ids_by_reason: dict[str, list[str]] = defaultdict(list)
 
         for run in runs:
             workflow = run.get("workflow", "unknown")
-            durations_by_workflow[workflow].append(float(run.get("duration_seconds", 0)))
-            retry_counts_by_workflow[workflow].append(int(run.get("retry_count", 0)))
+            run_id = run.get("run_id")
+            durations_by_workflow[workflow].append(
+                (str(run_id) if run_id is not None else None, float(run.get("duration_seconds", 0)))
+            )
+            retry_count = int(run.get("retry_count", 0))
+            retry_runs_by_workflow[workflow].append(
+                (str(run_id) if run_id is not None else None, retry_count)
+            )
             if run.get("status") == "failure":
                 stage = run.get("failed_stage")
                 if stage:
@@ -244,6 +251,8 @@ class PipelineOptimizerAgent(BaseAgent):
                 reason = run.get("failure_reason")
                 if reason:
                     failure_reason_counts[reason] += 1
+                    if run_id is not None:
+                        failure_run_ids_by_reason[reason].append(str(run_id))
 
         for stage_key, count in failing_stage_counts.items():
             if count >= REPEATED_FAILURE_THRESHOLD:
@@ -257,9 +266,12 @@ class PipelineOptimizerAgent(BaseAgent):
                 )
 
         for reason, count in failure_reason_counts.items():
+            run_ids = failure_run_ids_by_reason[reason]
+            run_evidence = f" in runs {', '.join(run_ids)}" if run_ids else ""
             if count >= FLAKY_THRESHOLD and "flaky" in reason.lower():
                 add(
-                    f"Recurring flaky-test signal '{reason}' seen {count} times -- "
+                    f"Recurring flaky-test signal '{reason}' seen {count} times"
+                    f"{run_evidence} -- "
                     "consider quarantining the flaky test.",
                     f"Quarantine '{reason}' behind an explicit tracking issue, capture the "
                     "failure evidence, and replace external timing dependence with a "
@@ -267,31 +279,45 @@ class PipelineOptimizerAgent(BaseAgent):
                 )
             elif count >= FLAKY_THRESHOLD and "dependency" in reason.lower():
                 add(
-                    f"Recurring dependency failure '{reason}' seen {count} times -- "
+                    f"Recurring dependency failure '{reason}' seen {count} times"
+                    f"{run_evidence} -- "
                     "investigate the upstream dependency.",
                     "Add dependency caching and a bounded retry for transient registry errors; "
                     "pin or mirror the affected dependency and alert on repeated failures.",
                 )
 
-        for workflow, durations in durations_by_workflow.items():
-            if len(durations) < 2:
+        for workflow, run_durations in durations_by_workflow.items():
+            if len(run_durations) < 2:
                 continue
+            durations = [duration for _, duration in run_durations]
             avg = mean(durations)
-            slow_runs = [d for d in durations if d > avg * SLOW_RUN_MULTIPLIER]
+            slow_runs = [
+                (run_id, duration)
+                for run_id, duration in run_durations
+                if duration > avg * SLOW_RUN_MULTIPLIER
+            ]
             if slow_runs:
+                run_ids = [run_id for run_id, _ in slow_runs if run_id is not None]
+                run_evidence = f" ({', '.join(run_ids)})" if run_ids else ""
                 add(
-                    f"Workflow '{workflow}' has {len(slow_runs)} run(s) significantly "
-                    f"slower than its {avg:.0f}s average -- consider caching dependencies "
+                    f"Workflow '{workflow}' has {len(slow_runs)} run(s){run_evidence} "
+                    f"significantly slower than its "
+                    f"{avg:.0f}s average -- consider caching dependencies "
                     "or splitting slow test suites.",
                     f"Profile the slow '{workflow}' runs, cache dependency installation, and "
                     "split the slowest test group into parallel jobs with separate timing "
                     "budgets.",
                 )
 
-        for workflow, retries in retry_counts_by_workflow.items():
-            if retries and mean(retries) >= 1.0:
+        for workflow, run_retries in retry_runs_by_workflow.items():
+            retry_runs = [(run_id, retry) for run_id, retry in run_retries if retry > 0]
+            if retry_runs:
+                run_ids = [run_id for run_id, _ in retry_runs if run_id is not None]
+                run_evidence = f" in runs {', '.join(run_ids)}" if run_ids else ""
                 add(
-                    f"Workflow '{workflow}' averages {mean(retries):.1f} retries per run -- "
+                    f"Workflow '{workflow}' had retries in {len(retry_runs)} run(s)"
+                    f" ({sum(retry for _, retry in retry_runs)} total attempts)"
+                    f"{run_evidence} -- "
                     "consider a workflow condition change to fail faster or reduce retries.",
                     f"Review retry conditions in '{workflow}', retry only known transient "
                     "failures, cap attempts, and fail fast for deterministic test or lint "
